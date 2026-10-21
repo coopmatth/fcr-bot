@@ -226,6 +226,159 @@ def experiments_section() -> str:
     )
 
 
+def gold24_section() -> str:
+    """Gold 24-month validation (run_gold24.py) + gold bot status.
+
+    Reads results/gold24.json; returns "" when the validation has not
+    been run so the rest of the dashboard still builds.
+    """
+    path = ROOT / "results" / "gold24.json"
+    if not path.exists():
+        return ""
+    doc = json.loads(path.read_text())
+    runs = doc["runs"]
+    by_variant = {r["variant"]: r for r in runs}
+    dq = doc["data_quality"]
+
+    def checks_cell(r) -> str:
+        c = r["pass_checks"]
+        mark = {True: "✓", False: "✗"}
+        return (
+            f"<span class='{'pos' if r['passed'] else 'neg'}'>"
+            f"{'PASS' if r['passed'] else 'FAIL'}</span><br>"
+            f"<span class='sub'>{mark[c['a_full_run_positive']]} full run · "
+            f"{mark[c['b_second_half_positive']]} 2nd half · "
+            f"{mark[c['c_trough_above_zero']]} trough &gt; $0</span>"
+        )
+
+    rows_html = []
+    for r in runs:
+        cls = "pos" if r["net_usd"] > 0 else "neg"
+        hl = " style='background:#12241a'" if r["passed"] else ""
+        rows_html.append(
+            f"<tr{hl}>"
+            f"<td>{html.escape(r['label'])}</td>"
+            f"<td>{r['trading_days']}</td><td>{r['trades']}</td>"
+            f"<td>{r['wins']}W / {r['losses']}L</td>"
+            f"<td>{pct(r['win_rate'])}</td>"
+            f"<td class='{cls}'>{signed_money(r['net_usd'])}</td>"
+            f"<td>{r['net_r']:+.2f}R</td>"
+            f"<td>{money(r['ending_equity_usd'])}</td>"
+            f"<td>{money(r['max_drawdown_usd'])}</td>"
+            f"<td>{money(r['equity_trough_usd'])}<span class='sub'> {html.escape(str(r['equity_trough_date']))}</span></td>"
+            f"<td>{r['longest_losing_streak']}</td>"
+            f"<td>{r['skipped_for_size']}</td>"
+            f"<td>{checks_cell(r)}</td></tr>"
+        )
+
+    half_rows = []
+    for r in runs:
+        for name, half in (("1st half", r["halves"]["first"]),
+                           ("2nd half", r["halves"]["second"])):
+            cls = "pos" if half["net_usd"] > 0 else "neg"
+            half_rows.append(
+                f"<tr><td>{html.escape(r['variant_label'])} — {name} "
+                f"<span class='sub'>{html.escape(half['range'])}</span></td>"
+                f"<td>{half['trading_days']}</td><td>{half['trades']}</td>"
+                f"<td>{half['wins']}W / {half['losses']}L</td>"
+                f"<td>{pct(half['win_rate'])}</td>"
+                f"<td class='{cls}'>{signed_money(half['net_usd'])}</td>"
+                f"<td>{half['net_r']:+.2f}R</td>"
+                f"<td>{money(half['ending_equity_usd'])}</td>"
+                f"<td>{money(half['max_drawdown_usd'])}</td>"
+                f"<td>{money(half['equity_trough_usd'])}</td></tr>"
+            )
+
+    winner = by_variant["v0"] if doc["winner"] else None
+    chart = ""
+    if winner is not None:
+        chart = (
+            "<div class='panel'><h2 style='margin-top:0'>Equity curve — "
+            "gold V0 baseline, 24 months (start $500)</h2>"
+            + equity_svg([("MGC V0", winner["equity_curve"], "#f5c451")])
+            + "</div>"
+        )
+
+    short_list = ", ".join(
+        f"{d['date']} ({d['rth_bars']})" for d in dq["short_days"]
+    )
+    flagged = ", ".join(dq["databento_degraded_flag_dates"])
+    interp = (
+        f"<p><b>Verdict.</b> The untouched baseline (V0) passed all three frozen "
+        f"criteria — full run positive ({signed_money(by_variant['v0']['net_usd'])}, "
+        f"{by_variant['v0']['net_r']:+.2f}R over {by_variant['v0']['trades']} trades), "
+        f"second half positive ({signed_money(by_variant['v0']['halves']['second']['net_usd'])}, "
+        f"{by_variant['v0']['halves']['second']['net_r']:+.2f}R), and the equity trough "
+        f"({money(by_variant['v0']['equity_trough_usd'])} on "
+        f"{html.escape(str(by_variant['v0']['equity_trough_date']))}) never came close to "
+        f"zeroing the $500 account. V5 (combined) also passed but is checked after V0 in "
+        f"the frozen priority order. V3 (partials) made the most dollars "
+        f"({signed_money(by_variant['v3']['net_usd'])}) yet FAILED criterion (b): its "
+        f"second-half net R was {by_variant['v3']['halves']['second']['net_r']:+.2f}R — "
+        f"banking halves made its recent trades smaller-but-losing in R terms. The "
+        f"criteria were frozen before the run and applied mechanically, so the bot runs "
+        f"the plain baseline.</p>"
+        f"<p><b>Honest caveats.</b> 224 trades is a real sample — this is not the "
+        f"13-trade noise of the 60-day cells — and the 28.6% win rate sits above the "
+        f"25% breakeven a 3:1 target needs. But the second half was much weaker than "
+        f"the first (+2.06R of the +26.26R total), the max drawdown ($1,543) is three "
+        f"times the starting account, and <b>no commissions or slippage are modeled</b>: "
+        f"224 round trips of micro commissions plus a tick or two of slippage per side "
+        f"would take a real bite out of the headline number. This is a hypothesis that "
+        f"survived a 24-month test, not a promise.</p>"
+        f"<p><b>Data quality.</b> {dq['rth_trading_days']} RTH days; "
+        f"{len(dq['short_days'])} days had fewer than {dq['short_day_threshold']} RTH "
+        f"bars (a full session is {dq['full_rth_bars']}): {html.escape(short_list)}. "
+        f"Most are scheduled early closes / holiday sessions. Databento separately "
+        f"flagged {html.escape(flagged)} as degraded — none of those three is a "
+        f"short-bar day in this file, so the degradation did not remove RTH bars. "
+        f"Short days were not dropped; the engine ran whatever bars exist.</p>"
+    )
+    bot_panel = (
+        "<div class='panel'><h2 style='margin-top:0'>Gold bot — built (demo only, not deployed)</h2>"
+        "<p><b>gold_bot.py</b> runs the winning V0 baseline on MGC through the existing "
+        "Tradovate DEMO layer: resolves the front-month contract each morning, feeds "
+        "1-minute bars to the same engine the backtester uses, places the entry as a "
+        "market order with the engine's stop/target attached as an OSO bracket the "
+        "moment a setup confirms, and liquidates anything still open at 15:55 ET. "
+        "One trade per day. The config (<b>config_gold.yaml</b>) is frozen — the "
+        "runner refuses to start if the symbol, sizing, or variant flags drift from "
+        "the validated spec, if the kill switch is not in its off position, or if "
+        "the client is not on the demo host.</p>"
+        "<p><b>Status: NOT deployed anywhere. It has never connected to the real "
+        "Tradovate API and has never placed an order</b> — it is covered by mocked "
+        "unit tests only, because no Tradovate account or demo API key exists yet. "
+        "Matt still needs to: open + fund a Tradovate account (API Access needs a "
+        "live funded account, min $1,000), subscribe to API Access ($25/mo), "
+        "generate a DEMO API key, and provide the credentials via secure entry "
+        "(env vars in .env.example) — never in chat. Live trading remains a "
+        "separate decision behind the hard-coded kill switch.</p></div>"
+    )
+    return (
+        "<h2>Gold — 24-month validation</h2>"
+        "<p class='muted'>The one hypothesis from the matrix above, tested properly: "
+        "GC.v.0 1-minute bars (Databento GLBX.MDP3), 2024-10-21 → 2026-10-20, traded "
+        "as MGC ($10/pt), same $500 / $150-risk / ≤5-contract spec, frozen variant "
+        "definitions — no retuning. Pass criteria, frozen before the run and checked "
+        "in the order V0 → V3 → V5: (a) 24-month net $ and net R both positive, "
+        "(b) second half also net positive on both, (c) equity trough above $0. "
+        "Full record: results/gold24.json.</p>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Variant</th><th>Days</th><th>Trades</th><th>W/L</th><th>Win rate</th>"
+        "<th>Net $</th><th>Net R</th><th>End equity</th><th>Max DD</th>"
+        "<th>Trough</th><th>Worst streak</th><th>Skipped</th><th>Verdict</th>"
+        f"</tr></thead><tbody>{''.join(rows_html)}</tbody></table></div>"
+        f"{chart}"
+        "<h2>Gold — half splits</h2>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Variant — half</th><th>Days</th><th>Trades</th><th>W/L</th><th>Win rate</th>"
+        "<th>Net $</th><th>Net R</th><th>End equity</th><th>Max DD</th><th>Trough</th>"
+        f"</tr></thead><tbody>{''.join(half_rows)}</tbody></table></div>"
+        f"<div class='panel'>{interp}</div>"
+        f"{bot_panel}"
+    )
+
+
 def main() -> int:
     summary = json.loads((ROOT / "results" / "summary.json").read_text())
     runs = {r["id"]: r for r in summary["runs"]}
@@ -332,6 +485,8 @@ def main() -> int:
   </tr></thead><tbody>{all_runs_rows}</tbody></table></div>
 
   {experiments_section()}
+
+  {gold24_section()}
 
   <div class="panel">
     <h2 style="margin-top:0">Broker: Tradovate (demo first)</h2>
