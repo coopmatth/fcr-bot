@@ -61,11 +61,41 @@ All times America/New_York.
 Engine states: `WAIT_FIRST_CANDLE → LEVELS_SET → WAIT_BREAK →
 WAIT_RETEST → IN_TRADE → DONE` (`LEVELS_SET` is transient).
 
-The native bar size is **1 minute**. The 60-day functional backtest
-(below) feeds **5-minute** bars instead — free 1-minute history only
-goes back ~7 days — so in that run the first RTH 5-minute bar is the
-first candle and all patterns form on 5-minute bars. That is a
-deliberate, documented deviation, not the production configuration.
+The native bar size is **1 minute**. The 60-day Yahoo functional
+backtest (further below) feeds **5-minute** bars instead — free Yahoo
+1-minute history only goes back ~7 days — so in that run the first RTH
+5-minute bar is the first candle and all patterns form on 5-minute
+bars. That is a deliberate, documented deviation, not the production
+configuration. The Databento run directly below is the true
+configuration on real 1-minute bars.
+
+## Backtest results — true 1-minute configuration (Databento, fetched 2026-10-21)
+
+Data: Databento **GLBX.MDP3**, symbol **MNQ.v.0** (continuous front
+month, volume roll), schema **ohlcv-1m**, 2026-08-10 → 2026-10-20 ET —
+71,520 one-minute bars covering **52 RTH trading days**, downloaded
+for **$0.26** against signup credit. (The raw CSV is not in this repo;
+re-fetch with `fetch_databento.py`.)
+
+Same execution model as below: fills at the engulfing bar's close,
+**no slippage, spread, or commissions modeled**, and the simulator
+never halts for balance or margin.
+
+| Run | Data | Days | Trades | Win rate | Net $ | Net R | End equity | Max DD | Avg contracts | Skipped (size) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| MNQ 1m, 60d | MNQ.v.0, 2026-08-10 → 2026-10-20 | 52 | 13 | 15.4% (2W/11L) | −$374.50 | −5.00R | $125.50 | $881.50 | 3.15 | 1 |
+
+Honest reading: the true 1-minute configuration also lost money over
+this window — at a 3:1 payout it needs a >25% win rate to break even
+and produced 15.4%, with both winners (+$432 and +$408, both shorts
+reaching the full +3R target) outnumbered by eleven −1R stop-outs.
+The simulated equity also dipped negative (trough −$282.50 on
+2026-10-09) because the simulator ignores margin: a real $500 account
+would have been stopped out by its broker around late September and
+never taken the last two trades. So even under the simulator's
+generous accounting the $500 account lost three quarters of its value;
+the rules as coded do not show an edge on MNQ over Aug–Oct 2026.
+Trade log: `results/trades_mnq_1m_databento_60d.csv`.
 
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
@@ -85,9 +115,10 @@ achievable account history.
 Honest reading: on 5-minute bars over the last ~60 days the rule lost
 money on both instruments — six of seven MNQ trades stopped out at
 exactly −1R before the one +3R winner. The 1-minute runs produced **no
-trades at all** in the ~7 days Yahoo serves, so the true configuration
-is effectively untested: the full chain (break + FVG + retest +
-engulfing before noon) simply never completed that week. With one
+trades at all** in the ~7 days Yahoo serves — the full chain (break +
+FVG + retest + engulfing before noon) simply never completed that
+week. (The Databento run above has since tested the true configuration
+over 52 days; it lost money too.) With one
 trade per day, even 60 days is a tiny sample; these numbers describe
 how the rules behaved, not what they will earn. Full trade logs are in
 `results/` locally and `results/summary.json` is the machine-readable
