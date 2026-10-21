@@ -379,6 +379,161 @@ def gold24_section() -> str:
     )
 
 
+def validation24_section() -> str:
+    """Winners — 24-month validation (run_validation24.py +
+    run_validation24_spy.py).
+
+    Reads results/validation24.json; returns "" when the validation
+    has not been completed so the rest of the dashboard still builds.
+    """
+    path = ROOT / "results" / "validation24.json"
+    if not path.exists():
+        return ""
+    doc = json.loads(path.read_text())
+    if "cross_sample_replication" not in doc:
+        return ""  # gated/partial record — nothing honest to show yet
+    cells = {c["id"]: c for c in doc["cells"]}
+    pd = cells["pd_sweep_mgc_24mo"]
+    spy_ids = ("ib_break_spy_24mo", "fcr_v0_spy_24mo",
+               "vwap_trend_spy_24mo", "orb15_spy_24mo")
+    spy_cells = [cells[i] for i in spy_ids]
+    pf = doc["portfolio"]
+    pfc = pf["combined"]
+
+    def af_cls(v) -> str:
+        return "pos" if v > 0 else "neg"
+
+    def verdict_cell(c) -> str:
+        v = c["verdict"]
+        cls = "pos" if v == "PASS" else ("neg" if v == "FAIL" else "")
+        style = " style='color:#f5c451'" if v.startswith("PASS (") else ""
+        return f"<span class='{cls}'{style}><b>{html.escape(v)}</b></span>"
+
+    repl_rows = []
+    for r in doc["cross_sample_replication"]["cells"]:
+        lf, nf = r["lab_file"], r["new_file"]
+        stab = r["stability"]
+        scls = "pos" if stab == "STABLE" else "neg"
+        repl_rows.append(
+            f"<tr><td>{html.escape(r['cell'])}</td>"
+            f"<td>{lf['trades']}</td>"
+            f"<td class='{af_cls(lf['net_usd'])}'>{signed_money(lf['net_usd'])}</td>"
+            f"<td class='{af_cls(lf['net_after_friction'])}'>{signed_money(lf['net_after_friction'])}</td>"
+            f"<td>{nf['trades']}</td>"
+            f"<td class='{af_cls(nf['net_usd'])}'>{signed_money(nf['net_usd'])}</td>"
+            f"<td class='{af_cls(nf['net_after_friction'])}'>{signed_money(nf['net_after_friction'])}</td>"
+            f"<td class='{scls}'><b>{stab}</b></td></tr>"
+        )
+
+    run_rows = []
+    for c in spy_cells:
+        h = c["halves"]
+        run_rows.append(
+            f"<tr><td>{html.escape(c['id'].replace('_24mo', ''))}</td>"
+            f"<td>{c['trading_days']}</td><td>{c['trades']}</td>"
+            f"<td>{c['wins']}W / {c['losses']}L</td>"
+            f"<td>{pct(c['win_rate'])}</td>"
+            f"<td class='{af_cls(c['net_usd'])}'>{signed_money(c['net_usd'])}</td>"
+            f"<td>{c['net_r']:+.2f}R</td>"
+            f"<td class='{af_cls(c['net_usd_after_friction'])}'><b>{signed_money(c['net_usd_after_friction'])}</b></td>"
+            f"<td>{money(c['ending_equity_usd_after_friction'])}</td>"
+            f"<td>{money(c['max_drawdown_usd'])}</td>"
+            f"<td class='{af_cls(h['h1']['net_after_friction_usd'])}'>{signed_money(h['h1']['net_after_friction_usd'])}</td>"
+            f"<td class='{af_cls(h['h2']['net_after_friction_usd'])}'>{signed_money(h['h2']['net_after_friction_usd'])}</td>"
+            f"<td class='{af_cls(c['trough_after_friction_usd'])}'>{money(c['trough_after_friction_usd'])}"
+            f"<span class='sub'> {html.escape(str(c['trough_after_friction_at']))}</span></td>"
+            f"<td>{c['skipped_for_size']}</td>"
+            f"<td>{html.escape(c['cross_sample_stability'])}</td>"
+            f"<td>{verdict_cell(c)}</td></tr>"
+        )
+
+    pd_h = pd["halves"]
+    pd_panel = (
+        "<div class='panel'><h2 style='margin-top:0'>Previous-day sweep — MGC (gold): "
+        "<span class='neg'>FAIL</span></h2>"
+        f"<p>Run on the SAME futures file as the lab (GLBX.MDP3 is deterministic — "
+        f"the lab window reproduces to the cent), full 24 months: {pd['trades']} trades "
+        f"({pd['wins']}W / {pd['losses']}L, {pct(pd['win_rate'])} win rate), gross "
+        f"{signed_money(pd['net_usd'])} ({pd['net_r']:+.2f}R) — but "
+        f"<b>{signed_money(pd['net_usd_after_friction'])} after friction</b>. "
+        f"Half splits after friction: H1 {signed_money(pd_h['h1']['net_after_friction_usd'])}, "
+        f"H2 {signed_money(pd_h['h2']['net_after_friction_usd'])}. The after-friction equity "
+        f"trough was {money(pd['trough_after_friction_usd'])} on "
+        f"{html.escape(str(pd['trough_after_friction_at']))} — a real $500 account would "
+        f"have been wiped out long before the second half recovered. Fails pass criteria "
+        f"(a) and (c). The lab's +$726.20 over 120 days was a favourable window, not an edge.</p></div>"
+    )
+
+    integrity_panel = (
+        "<div class='panel'><h2 style='margin-top:0'>⚠ SPY data-integrity finding</h2>"
+        "<p><b>The SPY 1-minute feed is not reproducible.</b> Two separate downloads of "
+        "the same SPY history from Databento's DBEQ.BASIC dataset disagree with each "
+        "other: across the 84 overlapping days they share, 10,234 of 37,015 bars "
+        "(about a third) differ in price or volume, and a third download disagrees "
+        "with both. There is no single 'true' SPY tape in this data — each download "
+        "is its own sample of a sampled feed. The futures data (GLBX.MDP3) does NOT "
+        "have this problem: the gold file used here is bit-for-bit the lab's file "
+        "and reproduces results to the cent.</p>"
+        "<p>Consequences, stated plainly: (1) every SPY intraday number in the "
+        "Strategy Lab above is a property of the one download that produced it — "
+        "single-sample evidence, now labelled as such in the README; (2) the SPY "
+        "validation below was run end-to-end on ONE file (spy_1m_24mo.csv, "
+        "2024-10-21 → 2026-10-19) so it is at least internally consistent; "
+        "(3) each verdict is printed next to a cross-sample stability check — "
+        "whether the cell kept its after-friction sign when the identical lab "
+        "window was re-run on the other download. Two of the four SPY winners "
+        "flipped sign across downloads. Treat their verdicts accordingly.</p></div>"
+    )
+
+    pf_panel = (
+        "<div class='panel'><h2 style='margin-top:0'>SPY portfolio, 24 months "
+        f"— <span class='{'pos' if pf['pass']['passed'] else 'neg'}'>"
+        f"{'PASS' if pf['pass']['passed'] else 'FAIL'}</span></h2>"
+        f"<p>The lab's three SPY components (IB breakout + FCR V0 + VWAP trend) in "
+        f"one shared $500 account on the new file, $300 open-risk cap: "
+        f"{pfc['trades_taken']} of {pfc['trades_considered']} trades taken "
+        f"({pfc['trades_skipped_by_cap']} skipped by the cap), combined "
+        f"<b>{signed_money(pfc['net_usd'])}</b> after friction, "
+        f"{pct(pfc['win_rate'])} win rate ({pfc['wins']}W / {pfc['losses']}L), "
+        f"ending equity {money(pfc['ending_equity_usd'])}, realized-curve max "
+        f"drawdown {money(pfc['max_drawdown_usd'])}, trough "
+        f"{money(pfc['trough_usd'])} (never below the $500 start on the realized "
+        f"curve). Naive uncapped sum of the components: "
+        f"{signed_money(pfc['naive_uncapped_sum_usd'])}. Caveats: the curve is "
+        f"realized-P&amp;L only (no mark-to-market), one component (VWAP trend) "
+        f"individually FAILS the trough test standalone, and the whole portfolio "
+        f"inherits the single-sample SPY data caveat above.</p></div>"
+    )
+
+    return (
+        "<h2>Winners — 24-month validation</h2>"
+        "<p class='muted'>The lab's top five cells re-run over 24 months "
+        "(2024-10-21 → 2026-10-20; SPY file ends 2026-10-19), same frozen spec, "
+        "same friction model. Pass test, frozen before the runs: (a) 24-month "
+        "net-after-friction &gt; $0, (b) second half (2025-10-21 → end) "
+        "net-after-friction &gt; $0, (c) after-friction realized-equity trough "
+        "&gt; $0. Full record: results/validation24.json.</p>"
+        f"{pd_panel}"
+        f"{integrity_panel}"
+        "<h2>Cross-sample replication — lab window (2026-06-22 → end), both SPY downloads</h2>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Cell</th><th>Lab file trades</th><th>Gross</th><th>After friction</th>"
+        "<th>New file trades</th><th>Gross</th><th>After friction</th><th>Stability</th>"
+        f"</tr></thead><tbody>{''.join(repl_rows)}</tbody></table></div>"
+        "<p class='muted'>STABLE = the after-friction sign agrees across the two "
+        "downloads; FLIPPED = it does not. The engines reproduce the lab exactly "
+        "on the lab file — the disagreement is in the data, not the code.</p>"
+        "<h2>SPY — full 24 months on the single new file</h2>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Cell</th><th>Days</th><th>Trades</th><th>W/L</th><th>Win rate</th>"
+        "<th>Gross $</th><th>Net R</th><th>After friction</th><th>End equity (AF)</th>"
+        "<th>Max DD</th><th>H1 AF</th><th>H2 AF</th><th>Trough (AF)</th>"
+        "<th>Skipped</th><th>Stability</th><th>Verdict</th>"
+        f"</tr></thead><tbody>{''.join(run_rows)}</tbody></table></div>"
+        f"{pf_panel}"
+    )
+
+
 def strategy_lab_section() -> str:
     """Strategy Lab (build_strategy_lab.py + build_portfolio.py).
 
@@ -634,6 +789,8 @@ def main() -> int:
   {gold24_section()}
 
   {strategy_lab_section()}
+
+  {validation24_section()}
 
   <div class="panel">
     <h2 style="margin-top:0">Broker: Tradovate (demo first)</h2>
