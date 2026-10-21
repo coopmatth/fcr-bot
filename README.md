@@ -281,7 +281,9 @@ dominated by VWAP ±2σ reversion, which lost on all five symbols
 after friction (worst: MGC −$4,396.96 over 67 trades) — fading
 2-sigma stretches in a trending summer/autumn was a systematically
 bad idea in this window. The daily pair barely traded: Donchian
-5 / 5 / 0 trades (SPY −$200.86, QQQ −$31.72, GC zero signals),
+5 / 5 / 0 trades (SPY −$200.86, QQQ −$31.72 after friction; gold
+produced 10 channel breakouts but every one was skipped for size —
+a 2×ATR stop on GC busts the $150 budget at ≤5 MGC contracts),
 RSI(2) 1 / 4 trades (SPY +$49.16, QQQ +$36.32, after friction).
 
 **Conjunction portfolio** (`build_portfolio.py`; record:
