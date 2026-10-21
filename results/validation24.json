@@ -425,7 +425,10 @@
     "trade_log": "results/trades_portfolio24_combined.csv"
   },
   "publish": {
-    "status": "pending \u2014 updated by the publish step of run_validation24_spy.py's follow-up"
+    "status": "PUBLISHED",
+    "github": "coopmatth/fcr-bot \u2014 run_validation24_spy.py, run_validation24.py, build_site.py, README.md, site/index.html, results/validation24.json, results/portfolio24.json, per-cell 24mo JSONs and trade CSVs pushed via the connector contents API",
+    "vercel": "deployment dpl_ARKUzWwD1BTp9sJr3RqWxun486jd READY (production); https://fcr-bot-miracle-tree-lagrange-s-projects.vercel.app verified live serving the 'Winners \u2014 24-month validation' section (pd_sweep FAIL panel, data-integrity finding, cross-sample replication table, SPY 24-month verdicts, portfolio panel)",
+    "tests": "92 passed"
   },
   "spy_completion": {
     "method": "Full 24-month runs on data/spy_1m_24mo.csv ONLY (run_validation24_spy.py), frozen lab spec and friction; the gated slice-match requirement is replaced by a cross-sample replication table because the diagnosis proved no two DBEQ.BASIC pulls can slice-match.",
