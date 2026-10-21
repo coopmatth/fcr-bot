@@ -276,6 +276,7 @@ def main() -> int:
       <li><b>The simulator never stops.</b> Equity tracking is bookkeeping only: no margin checks, no halt at zero balance. One run (QQQ) ends below zero, which a live account could never do.</li>
       <li><b>Sample size.</b> One trade per day means even 60 days is only a handful of trades. These results describe how the rules behaved, not what they will earn.</li>
       <li><b>Paper only.</b> Nothing here places real orders. Live trading stays disabled by a hard-coded kill switch.</li>
+      <li><b>Tradovate API ≠ market data.</b> The $25/mo API Access add-on covers orders and account data only — real-time market data through the API is a separate CME-licensed arrangement (demo uses simulated data). A live version needs its data feed sorted separately.</li>
     </ul>
     <p class="muted" style="margin-bottom:2px">Data notes from the fetch:</p>
     <ul>{data_notes}</ul>
