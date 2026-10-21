@@ -231,6 +231,84 @@ RTH bars. Short days were **not** dropped — every day with session
 bars ran through the engine on whatever bars exist. The full list
 is in `results/gold24.json`.
 
+## Strategy Lab — eight pro tactics over 120 days (2026-10-21)
+
+The FCR matrix asked whether *adjustments* help; the lab asks the
+wider question: how do the classic professional tactics themselves
+do under the same house spec ($500 paper account, $150 risk budget,
+futures ≤5 contracts, equities in shares, one position at a time)?
+The rule specs were frozen first and audited against the canonical
+published versions — see
+[`research/strategy_evidence.md`](research/strategy_evidence.md)
+(Crabel for ORB, Raschke for the sweep, Connors for RSI(2), the
+Turtle literature for Donchian). That audit caught one real bug,
+fixed before the run: **Connors RSI(2) enters AT the signal day's
+close**, but `fcr/daily.py` filled at the next open. It now fills
+at the signal close (the SPY smoke trade moved from the 2026-06-11
+open, 728.76, to the 2026-06-10 close, 725.43 — same exit, +$49.32
+instead of +$36.00).
+
+**Windows.** Intraday pack: 1-minute Databento bars, 2026-06-22 →
+2026-10-20 — 120 *calendar* days = 87 RTH sessions (84 for SPY,
+whose DBEQ.BASIC data ends 2026-10-19). Daily pair: last 120
+*trading* days (2026-04-30 → 2026-10-20) on Yahoo daily bars.
+
+**Friction.** Gross columns model no costs, as everywhere in this
+repo. Every run also reports a net-of-friction twin — a fixed
+per-unit round-trip charge (MNQ $3.40, MES $4.90, MGC $4.40, SIL
+$12.40, SPY/QQQ $0.04/share: micro fees plus ~1 tick of slippage
+per side) — and the lab ranks by the after-friction number. It
+matters: several gross-green cells flip red after friction
+(previous-day sweep on MNQ +$216.50 → −$45.30; VWAP reversion on
+MNQ +$363.11 → −$279.49; ORB close-exit on MES +$428.75 → −$95.55).
+
+Top of the table (45 runs; full record:
+`results/strategy_lab.json`, indepently spot-verified from the
+trade CSVs by `verify_strategy_lab.py`):
+
+| Run | Trades | Net $ (gross) | Net after friction | Net R |
+| --- | --- | --- | --- | --- |
+| Initial Balance breakout — SPY | 68 | +$1,385.14 | **+$1,115.58** | +9.24R |
+| FCR V0 baseline — SPY | 26 | +$1,496.26 | **+$1,001.62** | +10.00R |
+| VWAP trend pullback — SPY | 45 | +$1,638.15 | **+$829.15** | +10.96R |
+| Previous-day sweep — MGC | 29 | +$1,153.00 | **+$726.20** | +5.76R |
+| ORB 15m — SPY | 83 | +$754.35 | **+$455.07** | +5.05R |
+| Initial Balance breakout — MES | 64 | +$728.77 | **+$224.07** | +5.61R |
+
+By net R the order shuffles (VWAP trend SPY +10.96R first, FCR SPY
++10.00R second) but the same names stay on top. The bottom is
+dominated by VWAP ±2σ reversion, which lost on all five symbols
+after friction (worst: MGC −$4,396.96 over 67 trades) — fading
+2-sigma stretches in a trending summer/autumn was a systematically
+bad idea in this window. The daily pair barely traded: Donchian
+5 / 5 / 0 trades (SPY −$200.86, QQQ −$31.72, GC zero signals),
+RSI(2) 1 / 4 trades (SPY +$49.16, QQQ +$36.32, after friction).
+
+**Conjunction portfolio** (`build_portfolio.py`; record:
+`results/portfolio.json`, trades:
+`results/trades_portfolio_combined.csv`). Top 3 cells by
+after-friction $ with ≥15 trades and at most one per strategy
+family — Initial Balance SPY, FCR SPY, VWAP trend SPY — traded in
+one shared $500 account under a $300 cap on summed open initial
+risk: 138 of 139 trades taken (one FCR trade skipped by the cap),
+combined **+$2,516.35** after friction, 42.0% win rate, ending
+equity $3,016.35, realized-curve max drawdown $3,014.19 — versus a
+naive uncapped sum of +$2,946.35. All three components trade SPY
+intraday, so the diversification is by strategy logic, not by
+market; the equity curve is realized-P&L-only (no mark-to-market),
+which the portfolio record states explicitly.
+
+**Honest reading.** 13 of 45 cells finished green after friction —
+but with 45 cells on test, several green cells are expected by
+chance alone, and 5 of the 13 rest on fewer than 15 trades
+(†-marked on the dashboard; the two SIL ORB cells have exactly one
+trade each). The credible standouts are the ≥15-trade green cells,
+and they cluster on SPY in a single Jun–Oct 2026 window — one
+market, one regime. They have earned a longer-window test, not
+belief. As always here, the simulator never halts for balance or
+margin; several runs' paper equity goes deeply negative, which a
+real $500 account could never survive.
+
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
 Execution model: entries fill at the engulfing bar's close; exits at
