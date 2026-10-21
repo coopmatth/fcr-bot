@@ -1,0 +1,48 @@
+{
+  "id": "pd_sweep_mgc_24mo",
+  "strategy": "pd_sweep",
+  "strategy_label": "Previous-day sweep (liquidity fade)",
+  "symbol": "MGC",
+  "symbol_key": "mgc",
+  "data_file": "data/gc_1m_24mo.csv",
+  "data_symbol": "GC.v.0 tape (GLBX.MDP3)",
+  "point_value_usd": 10.0,
+  "friction_per_unit_usd": 4.4,
+  "window": {
+    "start": "2024-10-21",
+    "end": "2026-10-20"
+  },
+  "trading_days": 516,
+  "trades": 184,
+  "wins": 67,
+  "losses": 117,
+  "win_rate": 0.3641,
+  "net_usd": 1168.0,
+  "net_r": 8.6,
+  "net_usd_after_friction": -1564.4,
+  "ending_equity_usd": 1668.0,
+  "ending_equity_usd_after_friction": -1064.4,
+  "max_drawdown_usd": 1270.0,
+  "skipped_for_size": 54,
+  "trade_log": "results/trades_pd_sweep_mgc_24mo.csv",
+  "halves": {
+    "h1": {
+      "trades": 106,
+      "net_after_friction_usd": -1735.8,
+      "net_r": 3.842
+    },
+    "h2": {
+      "trades": 78,
+      "net_after_friction_usd": 171.4,
+      "net_r": 4.758
+    }
+  },
+  "trough_after_friction_usd": -2116.2,
+  "trough_after_friction_at": "2026-08-20 11:00",
+  "pass": {
+    "a_net_after_friction_positive": false,
+    "b_h2_net_after_friction_positive": true,
+    "c_trough_above_zero": false,
+    "passed": false
+  }
+}
