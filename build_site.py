@@ -379,6 +379,151 @@ def gold24_section() -> str:
     )
 
 
+def strategy_lab_section() -> str:
+    """Strategy Lab (build_strategy_lab.py + build_portfolio.py).
+
+    Eight professional tactics — the intraday pack, the daily pair,
+    and FCR V0 as the reference column — over one 120-day window,
+    ranked by net-after-friction $. Reads results/strategy_lab.json
+    and results/portfolio.json; returns "" when the lab has not been
+    run so the rest of the dashboard still builds.
+    """
+    path = ROOT / "results" / "strategy_lab.json"
+    if not path.exists():
+        return ""
+    lab = json.loads(path.read_text())
+    runs = lab["runs"]
+    by_id = {r["id"]: r for r in runs}
+    ordered = [by_id[i] for i in lab["rankings"]["by_net_after_friction"]]
+    green = [r for r in runs if r["net_after_friction_usd"] > 0]
+    anecdotes = [r for r in green if r["anecdote_class"]]
+    spy_top = sum(1 for r in ordered[:10] if r["symbol"] == "SPY")
+
+    rows_html = []
+    for r in ordered:
+        after = r["net_after_friction_usd"]
+        cls = "pos" if after > 0 else ("neg" if after < 0 else "")
+        hl = " style='background:#12241a'" if after > 0 else ""
+        mark = " †" if r["anecdote_class"] else ""
+        rows_html.append(
+            f"<tr{hl}>"
+            f"<td>{r['rank_net_after_friction']}</td>"
+            f"<td>{html.escape(r['strategy_label'])} — {html.escape(r['symbol'])}{mark}</td>"
+            f"<td>{r['trading_days']}</td><td>{r['trades']}</td>"
+            f"<td>{r['wins']}W / {r['losses']}L</td>"
+            f"<td>{pct(r['win_rate'])}</td>"
+            f"<td>{signed_money(r['net_usd'])}</td>"
+            f"<td class='{cls}'><b>{signed_money(after)}</b></td>"
+            f"<td>{r['net_r']:+.2f}R</td>"
+            f"<td>{money(r['ending_equity_usd'])}</td>"
+            f"<td>{money(r['max_drawdown_usd'])}</td>"
+            f"<td>{r['skipped_for_size']}</td></tr>"
+        )
+
+    pf_path = ROOT / "results" / "portfolio.json"
+    pf_panel = ""
+    if pf_path.exists():
+        pf = json.loads(pf_path.read_text())
+        cb = pf["combined"]
+        comp_rows = "".join(
+            f"<tr><td>{html.escape(by_id[c['run_id']]['strategy_label'])} — "
+            f"{html.escape(c['symbol'])}</td>"
+            f"<td>{signed_money(c['standalone']['net_after_friction_usd'])}</td>"
+            f"<td>{c['trades_taken']} / {c['trades_considered']}</td>"
+            f"<td>{c['trades_skipped_by_cap']}</td>"
+            f"<td class='{'pos' if c['taken_net_usd'] >= 0 else 'neg'}'>"
+            f"{signed_money(c['taken_net_usd'])}</td></tr>"
+            for c in pf["components"]
+        )
+        pf_panel = (
+            "<div class='panel'><h2 style='margin-top:0'>Conjunction portfolio — "
+            "top 3 cells, one $500 account, $300 open-risk cap</h2>"
+            "<div class='tblwrap'><table><thead><tr><th>Component</th>"
+            "<th>Standalone (after friction)</th><th>Taken / considered</th>"
+            "<th>Skipped by cap</th><th>Taken net</th></tr></thead>"
+            f"<tbody>{comp_rows}</tbody></table></div>"
+            f"<p>Combined: <b class='pos'>{signed_money(cb['net_usd'])}</b> after "
+            f"friction over {cb['trades_taken']} taken trades "
+            f"({cb['wins']}W / {cb['losses']}L, {pct(cb['win_rate'])} win rate), "
+            f"ending equity {money(cb['ending_equity_usd'])}, realized-curve max "
+            f"drawdown {money(cb['max_drawdown_usd'])}; the naive uncapped sum of "
+            f"the three standalone runs is {signed_money(cb['naive_uncapped_sum_usd'])}. "
+            "Selection rule: top 3 by net-after-friction $ among runs with ≥15 "
+            "trades, at most one cell per strategy family. Mechanics: each trade "
+            "keeps its own strategy's size and net-of-friction P&amp;L; trades are "
+            "processed chronologically and skipped (counted) when their initial "
+            "risk would push summed open risk past $300. <b>Concentration "
+            "warning:</b> all three winning components trade SPY intraday — the "
+            "diversification here is by strategy logic, not by market, and the "
+            "three books are strongly correlated. Simplification: the equity "
+            "curve uses realized P&amp;L at exit times only (no mark-to-market "
+            "of open trades), so the drawdown shown is the realized-curve "
+            "drawdown. Full record: results/portfolio.json + "
+            "results/trades_portfolio_combined.csv.</p></div>"
+        )
+
+    top = ordered[0]
+    framing = (
+        f"<p><b>Honest framing — read this before the table.</b> The intraday "
+        f"window is 120 CALENDAR days (2026-06-22 → 2026-10-20), which is only "
+        f"87 regular sessions for the futures and 84 for SPY (its data ends "
+        f"2026-10-19) — roughly 84 trading days, not 120. The two daily "
+        f"strategies trade a 120-TRADING-day window instead, and even so "
+        f"produced only a handful of trades (Donchian 5 / 5 / 0 across "
+        f"SPY/QQQ/GC, RSI(2) 1 / 4) — those rows are anecdotes, not verdicts, "
+        f"and every row under 15 trades is marked †.</p>"
+        f"<p><b>Chance manufactures green cells.</b> {len(green)} of 45 cells "
+        f"finished positive after friction — but with 45 cells on test, several "
+        f"green cells are EXPECTED by luck alone, and the table is ranked by "
+        f"the winners, which inflates them further (winner's curse). "
+        f"{len(anecdotes)} of the green cells rest on fewer than 15 trades. "
+        f"The standout cells — {html.escape(top['strategy_label'])} on "
+        f"{html.escape(top['symbol'])} at {signed_money(top['net_after_friction_usd'])} "
+        f"after friction over {top['trades']} trades, and the SPY-heavy top of "
+        f"the table ({spy_top} of the top 10 are SPY) — have earned a "
+        f"longer-window test, not belief. One window (Jun–Oct 2026) favored "
+        f"SPY intraday systems; another window may not.</p>"
+        f"<p><b>Friction model.</b> Gross numbers model no costs at all. The "
+        f"after-friction column deducts a fixed per-unit round-trip charge — "
+        f"MNQ $3.40, MES $4.90, MGC $4.40, SIL $12.40, SPY/QQQ $0.04 per "
+        f"share (fees plus roughly a tick of slippage per side) — from every "
+        f"trade. It is an estimate, not a fill report, and it matters: "
+        f"several gross-green cells (e.g. previous-day sweep and VWAP "
+        f"reversion on MNQ) flip red after friction, which is why the "
+        f"ranking uses the after-friction column. As everywhere on this "
+        f"dashboard, the simulator never halts for balance or margin — "
+        f"several runs' paper equity goes deeply negative, which a real "
+        f"$500 account could never do; read those as strategy behavior "
+        f"under the house spec, not survivable account histories.</p>"
+    )
+    return (
+        "<h2>Strategy Lab — eight pro tactics, 120 days</h2>"
+        "<p class='muted'>Every tactic from the research brief "
+        "(research/strategy_evidence.md — canonical rules audited against "
+        "Crabel, Raschke, Connors and the Turtle literature), frozen into "
+        "mechanical rules and run under the same house spec: $500 paper "
+        "account, $150 risk budget per trade, futures ≤5 contracts, SPY/QQQ "
+        "in shares, no costs in the gross columns. Intraday pack on "
+        "1-minute Databento bars, 2026-06-22 → 2026-10-20 (SPY → 10-19): "
+        "ORB 15m / ORB 30m / ORB 15m close-exit, previous-day sweep, VWAP "
+        "±2σ reversion, VWAP trend pullback, Initial Balance breakout, and "
+        "FCR V0 as the reference column (route proven: it reproduces the "
+        "known MNQ 60-day baseline of −$374.50 / 13 trades exactly). Daily "
+        "pair on Yahoo daily bars, last 120 trading days: Donchian trend "
+        "and Connors RSI(2) — with the canonical Connors entry AT the "
+        "signal day's close. Ranked by net-after-friction $. "
+        "Full record: results/strategy_lab.json.</p>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>#</th><th>Strategy — symbol</th><th>Days</th><th>Trades</th>"
+        "<th>W/L</th><th>Win rate</th><th>Net $ (gross)</th>"
+        "<th>Net $ after friction</th><th>Net R</th><th>End equity</th>"
+        "<th>Max DD</th><th>Skipped</th>"
+        f"</tr></thead><tbody>{''.join(rows_html)}</tbody></table></div>"
+        f"{pf_panel}"
+        f"<div class='panel'>{framing}</div>"
+    )
+
+
 def main() -> int:
     summary = json.loads((ROOT / "results" / "summary.json").read_text())
     runs = {r["id"]: r for r in summary["runs"]}
@@ -487,6 +632,8 @@ def main() -> int:
   {experiments_section()}
 
   {gold24_section()}
+
+  {strategy_lab_section()}
 
   <div class="panel">
     <h2 style="margin-top:0">Broker: Tradovate (demo first)</h2>
