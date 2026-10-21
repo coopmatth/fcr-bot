@@ -1,0 +1,6 @@
+strategy,symbol,direction,entry_date,exit_date,entry_price,exit_price,exit_reason,units,hold_days,risk_usd,pnl_usd,pnl_net_usd,r_multiple,r_net
+donchian_trend,QQQ,long,2026-05-01,2026-06-08,669.16,717.81,channel_exit,7,25,139.34,340.55,340.27,2.444,2.442
+donchian_trend,QQQ,short,2026-07-20,2026-08-05,702.16,726.25,channel_exit,4,12,122.28,-96.36,-96.52,-0.788,-0.789
+donchian_trend,QQQ,long,2026-08-14,2026-08-24,733.41,707.0976,stop,5,6,131.56,-131.56,-131.76,-1.0,-1.002
+donchian_trend,QQQ,long,2026-09-22,2026-10-15,740.98,718.55,channel_exit,7,17,142.49,-157.01,-157.29,-1.102,-1.104
+donchian_trend,QQQ,short,2026-10-19,2026-10-20,719.61,717.63,end_of_data,7,1,147.64,13.86,13.58,0.094,0.092
