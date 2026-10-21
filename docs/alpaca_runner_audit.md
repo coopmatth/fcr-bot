@@ -9,7 +9,11 @@ may trigger on a live account, that could cost us money?"*
 fault-injection proofs in `tests/test_alpaca_faults.py` (23 tests,
 all offline). Audit only — no runner behavior was changed.
 **Suite state after adding the fault tests: 163 passed** (140
-pre-existing + 23 audit).
+pre-existing + 23 audit). After the 2026-10-21 hardening pass:
+**203 passed** across the repo suite (the alpaca test files
+gained a net +12 flipped/new tests; the balance is the parallel
+options-variant build), and the dry-run replay proof still
+matches the backtest 125/125 decision fields.
 
 Every finding is labeled **CONFIRMED** (the unsafe behavior is
 demonstrated by a named, passing fault test that asserts the unsafe
@@ -24,25 +28,44 @@ and the systemd journal on the box. On paper that costs signal
 quality; on a live account it means the difference between a bad
 minute and a bad week is whether a human happens to read a log.
 
+---
+
+**HARDENING UPDATE — 2026-10-21 (same day, Matt's approval).**
+The two High findings (F1, F5) plus the cheap Mediums (F2, F3, F4,
+F6, F7, F8, F11, F13) were fixed, redeployed to the box, and
+verified the same evening; the scored forward test starting
+2026-10-22 runs the hardened build. Each fixed finding below
+carries a **FIXED 2026-10-21** addendum naming the mechanism and
+the flipped fault test (the `test_fault_*` tests for fixed
+findings now assert the SAFE behavior as `test_fixed_*`). F10 and
+F14 (and the Lows F9/F12/F15) remain **OPEN** — they alter strategy
+semantics and need Matt's separate call, per the hardening scope.
+The no-alerting amplifier is NOT fixed by this pass: failures are
+now contained and loudly logged (`orphan_flattened`,
+`exit_failure_critical`, `state_quarantined`,
+`flatten_backstop_fired`, `calendar_unavailable`), but they still
+terminate in the event log; a daily health check on the service
+is the standing mitigation during the forward test.
+
 ## Executive summary
 
 | # | Finding | Severity | Status | One-line fix |
 |---|---------|----------|--------|--------------|
-| F1 | Entry fill the runner never sees (timeout / process death after Alpaca filled) → orphan position + permanent halt, never flattened | **High** | CONFIRMED | Send `client_order_id` on every order; on any entry error, query orders/positions before concluding anything |
-| F5 | Share sizing is uncapped: worst real day requested 300 sh ≈ **$182k notional** (364× the $500 overlay); ~10% of days > $100k | **High** | CONFIRMED | Hard `max_units` / max-notional cap in SPY_META + a pre-flight buying-power check |
-| F3 | Exit order rejected at stop/flatten → uncaught crash; retry only via systemd restart replay; no escalation | Medium | CONFIRMED | Catch exit failures in-run: retry with backoff, then escalate (close via DELETE /v2/positions) and alert |
-| F2 | Order stuck `partially_filled` polls out to OrderError while shares sit filled; **no cancel-order capability exists anywhere** | Medium | CONFIRMED | Treat `partially_filled` as a fill state (book filled qty); add `cancel_order` |
-| F4 | Partial EXIT fill leaves the remainder with no stop/target management until end-of-day | Medium | CONFIRMED | After a partial exit, keep managing the remainder (don't mark the trade done) |
-| F6 | No market-calendar awareness: early-close days flatten whenever the feed ends; the flatten order goes into a closed market | Medium | CONFIRMED | Consult `/v2/clock` / `/v2/calendar`; drive flatten from the day's actual close |
-| F10 | Missing minutes inside the 09:30–09:45 range window are invisible: wrong range, wrong trades, no event | Medium | CONFIRMED | Gap detection over the range window (expected vs received bar count) + a logged warning |
-| F11 | Flatten is bar-driven, not wall-clock-driven: a feed exception mid-position aborts the day with no flatten attempt | Medium | CONFIRMED | Wall-clock flatten watchdog independent of the bar loop |
-| F14 | No fill-sanity check: a slipped entry silently multiplies real risk (1% slip on the worst tape day ≈ **13×** the $150 budget) | Medium | CONFIRMED | Compare fill vs signal price; log — and optionally void — entries beyond a divergence bound |
-| F7 | No single-instance guard: two runners on one account trade the same day twice (2× risk) | Medium | CONFIRMED | flock/PID lock on the state dir at startup |
-| F8 | Corrupt state file → `JSONDecodeError` crash-loops forever under systemd; no quarantine/recovery | Medium | CONFIRMED | On load failure, rename the bad file aside, halt loudly (exit 3), never loop |
-| F9 | Bar source yields out-of-order bars unguarded (dedupe only, no monotonicity check) | Low | CONFIRMED | Drop/log bars older than the last yielded timestamp |
-| F12 | `get_bars` pagination loop has no page cap: a stuck `next_page_token` hangs the fetch (and the flatten with it) | Low | CONFIRMED | Cap pages (e.g. 50) and raise past the cap |
-| F13 | HTTP transport follows redirects off the locked host, credentials attached; only the original URL is host-checked | Low | CONFIRMED | Refuse redirects (NoRedirect handler, as the Databento helper already does) |
-| F15 | `python -m alpaca.runner` double-executes the runner module (the journal's RuntimeWarning): two class copies in the service process | Low | CONFIRMED (benign today) | Lazy-import `.runner` in `alpaca/__init__.py`, or run the service via a plain script entry |
+| F1 | Entry fill the runner never sees (timeout / process death after Alpaca filled) → orphan position + permanent halt, never flattened | **High** | **FIXED 2026-10-21** | Send `client_order_id` on every order; on any entry error, query orders/positions before concluding anything |
+| F5 | Share sizing is uncapped: worst real day requested 300 sh ≈ **$182k notional** (364× the $500 overlay); ~10% of days > $100k | **High** | **FIXED 2026-10-21** | Hard `max_units` / max-notional cap in SPY_META + a pre-flight buying-power check |
+| F3 | Exit order rejected at stop/flatten → uncaught crash; retry only via systemd restart replay; no escalation | Medium | **FIXED 2026-10-21** (contained version) | Catch exit failures in-run: retry with backoff, then escalate (close via DELETE /v2/positions) and alert |
+| F2 | Order stuck `partially_filled` polls out to OrderError while shares sit filled; **no cancel-order capability exists anywhere** | Medium | **FIXED 2026-10-21** | Treat `partially_filled` as a fill state (book filled qty); add `cancel_order` |
+| F4 | Partial EXIT fill leaves the remainder with no stop/target management until end-of-day | Medium | **FIXED 2026-10-21** | After a partial exit, keep managing the remainder (don't mark the trade done) |
+| F6 | No market-calendar awareness: early-close days flatten whenever the feed ends; the flatten order goes into a closed market | Medium | **FIXED 2026-10-21** | Consult `/v2/clock` / `/v2/calendar`; drive flatten from the day's actual close |
+| F10 | Missing minutes inside the 09:30–09:45 range window are invisible: wrong range, wrong trades, no event | Medium | CONFIRMED — **OPEN** (out of hardening scope) | Gap detection over the range window (expected vs received bar count) + a logged warning |
+| F11 | Flatten is bar-driven, not wall-clock-driven: a feed exception mid-position aborts the day with no flatten attempt | Medium | **FIXED 2026-10-21** (contained version: stall case) | Wall-clock flatten watchdog independent of the bar loop |
+| F14 | No fill-sanity check: a slipped entry silently multiplies real risk (1% slip on the worst tape day ≈ **13×** the $150 budget) | Medium | CONFIRMED — **OPEN** (out of hardening scope) | Compare fill vs signal price; log — and optionally void — entries beyond a divergence bound |
+| F7 | No single-instance guard: two runners on one account trade the same day twice (2× risk) | Medium | **FIXED 2026-10-21** | flock/PID lock on the state dir at startup |
+| F8 | Corrupt state file → `JSONDecodeError` crash-loops forever under systemd; no quarantine/recovery | Medium | **FIXED 2026-10-21** | On load failure, rename the bad file aside, halt loudly (exit 3), never loop |
+| F9 | Bar source yields out-of-order bars unguarded (dedupe only, no monotonicity check) | Low | CONFIRMED — **OPEN** (out of hardening scope) | Drop/log bars older than the last yielded timestamp |
+| F12 | `get_bars` pagination loop has no page cap: a stuck `next_page_token` hangs the fetch (and the flatten with it) | Low | CONFIRMED — **OPEN** (out of hardening scope) | Cap pages (e.g. 50) and raise past the cap |
+| F13 | HTTP transport follows redirects off the locked host, credentials attached; only the original URL is host-checked | Low | **FIXED 2026-10-21** | Refuse redirects (NoRedirect handler, as the Databento helper already does) |
+| F15 | `python -m alpaca.runner` double-executes the runner module (the journal's RuntimeWarning): two class copies in the service process | Low | CONFIRMED (benign today) — **OPEN** (out of hardening scope) | Lazy-import `.runner` in `alpaca/__init__.py`, or run the service via a plain script entry |
 
 ---
 
@@ -71,6 +94,21 @@ before deciding the day is order-free; give the halt path a
 flatten-the-orphan option once a human confirms — or at minimum an
 alert (see amplifier).
 
+**FIXED 2026-10-21.** (1) Every order carries a deterministic
+`client_order_id` (`orb15-<date>-entry`, `orb15-<date>-exit-<n>`,
+…), so submissions are idempotent. (2) On a submission failure
+with an UNKNOWN outcome (transport error or 409),
+`AlpacaBroker` looks the order up via
+`GET /v2/orders:by_client_order_id` before concluding anything; a
+definitive HTTP refusal raises immediately. (3) ORPHAN POLICY:
+reconciliation now FLATTENS an unexplained holding via
+`close_position`, logs `orphan_detected`/`orphan_flattened` with
+full detail (no overlay pnl booked — the entry fill is unknown),
+and halts entries for the day. Tests:
+`test_fixed_F1_orphan_position_is_flattened_and_day_halts`,
+`test_fixed_F1_unknown_submission_outcome_recovers_by_client_order_id`,
+`test_fixed_F1_definitive_refusal_is_not_looked_up`.
+
 ### F5 — Uncapped sizing: the strategy routinely asks for ~$100k+ — CONFIRMED, High
 `SPY_META` (runner.py:169) sets `max_units=None`;
 `fcr/engine.py:33` `compute_units` then returns
@@ -92,6 +130,24 @@ the overlay) treated as a spec change requiring Matt's sign-off,
 plus a pre-flight buying-power check so the failure is a logged
 skip, not a crash.
 
+**FIXED 2026-10-21** (policy per Matt: caps, not a pre-flight
+check). Hard caps live in ONE place (`alpaca/runner.py`:
+`MAX_SHARES = 200`, `MAX_NOTIONAL_USD = 150_000`): an entry order
+is `min(spec shares, both caps)`, a binding cap logs
+`size_capped` (spec vs actual), and the trade books at its actual
+size/risk. The frozen strategy and its `signal` event are
+untouched (the decision record still shows spec size — the
+125/125 replay proof still passes; 2 of its 25 days,
+2024-10-21 254→200 and 2024-11-08 212→200, now BOOK at the
+capped size). Measured over the backtest log's 498 trade days:
+**11 days (2.2%) would have clipped** — the share cap alone binds
+on 7, both caps are exceeded on 4 (the tighter applies), the
+notional cap alone on 0; the largest clipped order is the annex's
+worst day, 2024-12-05: 300 sh / $182,361 → 200 sh / $121,574.
+Entry-order rejections still fail the day by design (containment
+was scoped to exits). Test:
+`test_fixed_F5_sizing_is_capped_and_the_clipping_is_logged`.
+
 ### F3 — Exit rejection = crash; the only retry is a process restart — CONFIRMED, Medium
 Exit placement (`handle_exit_from_strategy`; the post-loop flatten
 at runner.py:1096) has no error handling: an `OrderError` from
@@ -109,6 +165,18 @@ open throughout).
 fall back to `close_position`; if all fail, halt (exit 3) with the
 position explicitly flagged — and alert.
 
+**FIXED 2026-10-21 (contained version).** All exit placements go
+through one chain (`Orb15Runner._exit_fill`): market order → on
+any failure, `close_position` once → on total failure, log
+`exit_failure_critical` and KEEP MANAGING: a strategy exit becomes
+pending and is retried at the top of every subsequent bar; the
+end-of-data flatten leaves a failed position in the persisted
+state for tomorrow's overnight-leftover flatten instead of
+crashing. Exits can no longer kill the process or die silently.
+(No alerting was added — see the hardening note at the top.)
+Tests: `test_fixed_F3_exit_rejection_falls_back_to_close_position`,
+`test_fixed_F3_total_exit_failure_is_critical_logged_and_run_survives`.
+
 ### F2 — Stuck `partially_filled` orders, and no way to cancel anything — CONFIRMED, Medium
 `AlpacaBroker.place_market` (runner.py:336–363) treats only
 `filled` and the final-bad set (`canceled/expired/rejected/
@@ -125,6 +193,13 @@ filled qty (the runner already books partial fills correctly —
 see SAFE list); add `DELETE /v2/orders/{id}` and cancel on
 poll-timeout before raising.
 
+**FIXED 2026-10-21.** `AlpacaClient.cancel_order`
+(`DELETE /v2/orders/{id}`) exists; `AlpacaBroker._await_fill`
+treats `partially_filled` as a live state until the order is
+terminal or the poll deadline passes, then cancels the remainder
+(best-effort) and books exactly the filled quantity.
+Test: `test_fixed_F2_partially_filled_cancels_remainder_and_books_filled`.
+
 ### F4 — Partial exit fill: the remainder loses its stop — CONFIRMED, Medium
 `_book_exit` correctly leaves a remainder position, but
 `handle_exit_from_strategy` then marks the day DONE and the orphan
@@ -137,6 +212,16 @@ original stop produces **no** order; the remaining 53 exit only at
 end of data.
 *Fix:* if an exit fill is partial, keep the runner in
 IN_POSITION management for the remainder with the original levels.
+
+**FIXED 2026-10-21.** A partial exit fill logs
+`exit_partial_remainder` and the remainder stays under the
+recorded stop/target/flatten levels (runner-managed from the
+next bar on, same level semantics as the orphan path) for the
+rest of the day; the state tracks the remaining quantity.
+Test:
+`test_fixed_F4_partial_exit_remainder_stays_under_level_management`
+(the stop-smashing 10:00 bar now exits the 53-share remainder
+there, not at end-of-data).
 
 ### F6 — No market calendar: early closes are invisible — CONFIRMED, Medium
 Nothing in `alpaca/` calls `/v2/calendar` or `/v2/clock` (grep:
@@ -158,6 +243,16 @@ list), and a feed outage. Proof:
 flatten at the actual close; treat "market closed early" as a
 first-class day type.
 
+**FIXED 2026-10-21.** `AlpacaClient.get_calendar` exists and the
+runner resolves the day's schedule at day start: a non-trading
+day is a clean skip (`non_trading_day`); an early close sets the
+flatten time to `min(15:55, close − 5 min)`, recorded on the
+`runner_day_start` event; a calendar fetch failure falls back to
+the default RTH schedule AND logs `calendar_unavailable` (never
+silent). Tests: `test_fixed_F6_early_close_day_uses_the_calendars_flatten_time`,
+`test_fixed_F6_non_trading_day_skips_cleanly`,
+`test_fixed_F6_calendar_failure_falls_back_loudly`.
+
 ### F10 — Range-window feed gaps silently rewrite the strategy — CONFIRMED, Medium
 Neither `AlpacaBarSource` nor the runner checks bar continuity.
 Proof: `test_fault_feed_gap_in_range_window_silently_distorts_range`
@@ -168,6 +263,10 @@ strategy is faithfully executing a tape that never existed.
 *Fix:* count expected vs received bars for 09:30–09:45 (and the
 session); log a `feed_gap` event; optionally refuse to trade a
 range built from < 15 bars.
+
+**OPEN** — out of the 2026-10-21 hardening scope (it alters
+strategy semantics; needs Matt's separate call). The fault test
+still documents the current behavior.
 
 ### F11 — No wall-clock flatten: exits wait for bars that may never come — CONFIRMED, Medium
 All exit logic lives inside the `for bar in bars:` loop
@@ -184,6 +283,19 @@ responses delays the flatten to whenever the source gives up
 *Fix:* an independent wall-clock watchdog: at 15:55 ET, if a
 position is open, flatten it regardless of bar flow.
 
+**FIXED 2026-10-21 (contained version).** `serve()` runs a daemon
+watchdog thread: if a position is open, the wall clock is at or
+past the day's flatten time, and no bar has been processed for
+over 3 minutes, it fires the flatten through the normal exit path
+and logs `flatten_backstop_fired`. This covers the STALL case (the
+feed stops yielding and the day run is blocked inside the source).
+The feed-EXCEPTION case is unchanged by design — the run aborts
+and recovery is the restart + adoption path (the original fault
+test's assertions still hold; it is kept, renamed
+`test_feed_exception_aborts_run_recovery_is_restart_plus_backstop`).
+Tests: `test_fixed_F11_backstop_flattens_when_the_feed_stalls`,
+`test_fixed_F11_backstop_stays_quiet_while_bars_are_fresh`.
+
 ### F14 — No fill-sanity check: slippage silently rescales risk — CONFIRMED, Medium
 The runner books the actual fill (honest accounting — pnl is
 computed from fill prices) but never compares `fill.price` to the
@@ -199,6 +311,10 @@ intended $150. No event records the divergence.
 (e.g. fill worse than the stop level, or >X% through) that voids
 or immediately exits the trade.
 
+**OPEN** — out of the 2026-10-21 hardening scope (it alters
+strategy semantics; needs Matt's separate call). The fault test
+still documents the current behavior.
+
 ### F7 — Two instances, one account, double trades — CONFIRMED, Medium
 No flock, PID file, lock, or shared-state check exists anywhere in
 the package (grep-verified; asserted in the test against the
@@ -212,6 +328,13 @@ live — precisely what this project's workflow does on the box.
 *Fix:* take an exclusive flock on the state directory in `main()`
 and refuse to start if held.
 
+**FIXED 2026-10-21.** `main()` takes a non-blocking flock on
+`runner.lock` in the state dir BEFORE any API use; a second
+instance logs `runner_lock_refused`, prints the refusal, and
+exits 0 (clean — no crash loop, no double trade).
+Test: `test_fixed_F7_second_instance_is_refused_by_the_lock`
+(lock semantics + the main() refusal path with a stubbed client).
+
 ### F8 — Corrupt state file = infinite crash loop — CONFIRMED, Medium
 `StateStore.save` is atomic (tmp + `os.replace`, runner.py:454 —
 verified SAFE below), but `load()` (runner.py:447) lets
@@ -222,6 +345,15 @@ and any position open at the broker is unmanaged meanwhile. Proof:
 `test_fault_corrupt_state_file_crash_loops_forever`.
 *Fix:* on decode failure, move the bad file to
 `runner_state.corrupt-<ts>.json`, write a halted state, exit 3.
+
+**FIXED 2026-10-21.** `run_day` catches the decode failure:
+the corrupt file is renamed to `runner_state.corrupt-<ts>.json`,
+`state_quarantined` is logged, and the runner starts HALTED
+pending reconciliation — the account is checked once (flat →
+stay halted for review; holding → the F1 orphan path flattens
+it). `run_day` returns a halted summary; the service exits 3,
+which systemd does not restart. No crash loop.
+Test: `test_fixed_F8_corrupt_state_quarantined_halted_and_reconciled`.
 
 ### F9 — Out-of-order bars pass through unguarded — CONFIRMED, Low
 `AlpacaBarSource.bars_for_day` dedupes by timestamp via a `seen`
@@ -257,6 +389,12 @@ discipline. Exploitation needs Alpaca (or a MITM on the path) to
 issue a redirect, hence Low — but the paper guarantee is supposed
 to be structural, and this is a hole in the structure.
 *Fix:* a NoRedirect handler that raises on any 3xx.
+
+**FIXED 2026-10-21.** `urllib_transport` uses an opener with a
+`_NoRedirect` handler that raises `AlpacaAPIError` on any
+redirect — the Databento pattern. The loopback proof now shows
+the redirect target is never contacted.
+Test: `test_fixed_F13_transport_refuses_redirects_off_the_locked_host`.
 
 ### F15 — The service runs two copies of the runner module — CONFIRMED, Low (benign today)
 `alpaca/__init__.py` eagerly imports `.runner`; the unit runs
@@ -380,4 +518,9 @@ code would stop the share-based runner from asking.
   saved between the broker call and the position assignment).
 
 *Audit deliverables: this report + `tests/test_alpaca_faults.py`.
-No production code was modified; the box service was not touched.*
+The original audit modified no production code; the 2026-10-21
+hardening pass (see the update note at the top) fixed F1/F2/F3/
+F4/F5/F6/F7/F8/F11/F13 in `alpaca/client.py` + `alpaca/runner.py`,
+flipped the corresponding fault tests, kept the dry-run replay
+proof at 125/125 decision fields, and redeployed the box service
+the same evening.*
