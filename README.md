@@ -567,6 +567,56 @@ are 5/5 green (2024H2-partial +$1,946.20 · 2025H1 +$2,914.58 ·
 but decaying — each of the last three buckets is smaller than
 the one before. Confirmed is not the same as strengthening.
 
+## ORB-15 on futures (MES) — 24-month validation (2026-10-21)
+
+<!-- ORB15-MES-VALIDATION:BEGIN -->
+The gate for Matt's live-$500 question. ORB-15 as confirmed on
+SPY risks its $150 with ~100 shares (~$77k notional) — no $500
+stock account can run it (margin needs $2,000 minimum equity by
+regulation, and fractional shares create no leverage). MES is
+the faithful executable form at that size, so the frozen
+strategy was re-run on the deterministic ES tape
+(`data/es_1m_24mo.csv`, GLBX.MDP3) over the same window as the
+SPY Polygon validation, 2024-10-21 → 2026-10-19, traded as MES.
+Sizing — the futures convention, stated in full:
+**contracts = min(5, floor($150 / (stop_points × $5/pt)))**;
+0 contracts (stop wider than 30 ES points) = skipped-for-size,
+day consumed; friction $4.90/contract round trip. This differs
+from the SPY run's uncapped shares by design. Route verified
+first: the lab-window slice on the 24-month file reproduces
+`orb15_mes_120d` to the cent (74 trades, +$571.25 / +$46.95 AF).
+
+| | MES (GLBX) | SPY (Polygon) |
+|---|---|---|
+| Days / trades | 514 / 429 (190W/239L) | 500 / 498 (214W/284L) |
+| Win rate | 44.3% | 43.0% |
+| Gross | +$6,340.00 (+55.76R) | +$8,608.80 (+57.81R) |
+| **Net after friction** | **+$2,929.60** | **+$6,803.40** |
+| AF per trade | +$6.83 | +$13.66 |
+| H1 AF / H2 AF | +$2,443.95 / +$485.65 | +$5,674.36 / +$1,129.04 |
+| AF trough | $338.00 (2024-10-21) | $339.98 (2024-10-21) |
+| Skipped for size | 83 | 0 |
+| Frozen test | **PASS (a ✓, b ✓, c ✓)** | PASS |
+
+The overnight-continuation effect is real: the per-trade AF
+edge on MES is 0.50× SPY's — almost exactly the halving the
+ib_break cross-check predicted. Decomposition: the gross edge
+only falls ~15% ($17.29 → $14.78/trade); the rest is friction
+($4.90 × ~1.62 contracts ≈ $7.95/trade vs ~$3.62/trade in
+shares). Unlike IB breakout, ORB-15's edge is large enough
+that half of it still clears the bar. Honest caveats, same as
+SPY: the decay pattern is present here too — sub-periods
+2024H2-partial +$806.75 · 2025H1 +$1,692.00 · 2025H2 +$37.75 ·
+2026H1 +$793.85 · 2026H2-partial **−$400.75** (the only red
+bucket, and the most recent); 14 of 25 months green; shorts
+again did most of the work (+$2,240.05 AF, 76% of the total,
+vs longs +$689.55). Risk shape: stop distances 3.5–30 points
+(median 16.5); contract counts 1×251, 2×110, 3×54, 4×7, 5×7 —
+a live $500 account mostly trades 1–2 contracts of this.
+Harness: `run_orb15_mes_validation.py`; full record:
+`results/orb15_mes_validation.json`.
+<!-- ORB15-MES-VALIDATION:END -->
+
 ## ORB-15 Alpaca paper forward test (deployed 2026-10-21; scored start Thu 2026-10-22)
 
 The forward-test runner for the frozen ORB-15 spec lives in the
@@ -902,6 +952,7 @@ fetch_polygon_spy.py   Polygon JSONL -> data/spy_1m_polygon.csv (SIP tape)
 run_polygon_spy.py     SPY re-check on Polygon -> results/polygon_verdict.json
 ORB15_SPEC.md          ORB-15 FROZEN spec (the strategy's identity document)
 run_orb15_deepdive.py  ORB-15 diagnostics + robustness -> results/orb15_deepdive.json
+run_orb15_mes_validation.py  ORB-15 on MES, 24-month futures validation -> results/orb15_mes_validation.json
 build_site.py          regenerates site/index.html from results/
 site/index.html        static dashboard (deployed to Vercel)
 tests/                 test_fcr.py (engine/sizing/equity), test_tradovate.py,
