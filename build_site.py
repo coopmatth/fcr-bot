@@ -904,6 +904,201 @@ def polygon_section() -> str:
     )
 
 
+def orb15_deepdive_section() -> str:
+    """ORB-15 deep dive (run_orb15_deepdive.py).
+
+    Matt's redirect after the Polygon verdict: focus entirely on
+    the confirmed lead strategy. Diagnostics on the 498-trade
+    Polygon log (after-friction basis) plus pre-declared robustness
+    — friction at 2x/3x, a 1-bar execution lag, sub-period
+    stability. The spec itself is frozen in ORB15_SPEC.md. Reads
+    results/orb15_deepdive.json; returns "" when the deep dive has
+    not been run.
+    """
+    path = ROOT / "results" / "orb15_deepdive.json"
+    if not path.exists():
+        return ""
+    doc = json.loads(path.read_text())
+    dg = doc["diagnostics"]
+    rb = doc["robustness"]
+    dist = dg["distribution"]
+    dd = dg["drawdown"]
+
+    def af_cls(v) -> str:
+        return "pos" if v > 0 else "neg"
+
+    def crit_marks(p) -> str:
+        marks = []
+        for key, label in (
+                ("a_net_after_friction_positive", "a"),
+                ("b_h2_net_after_friction_positive", "b"),
+                ("c_trough_above_zero", "c")):
+            marks.append(f"{label} {'✓' if p[key] else '✗'}")
+        return " · ".join(marks)
+
+    month_rows = "".join(
+        f"<tr><td>{html.escape(m['month'])}</td><td>{m['trades']}</td>"
+        f"<td>{pct(m['win_rate']) if m['win_rate'] is not None else '—'}</td>"
+        f"<td class='{af_cls(m['af_usd'])}'>{signed_money(m['af_usd'])}</td></tr>"
+        for m in dg["monthly"])
+    quarter_rows = "".join(
+        f"<tr><td>{html.escape(q['quarter'])}</td><td>{q['trades']}</td>"
+        f"<td>{pct(q['win_rate']) if q['win_rate'] is not None else '—'}</td>"
+        f"<td class='{af_cls(q['af_usd'])}'>{signed_money(q['af_usd'])}</td></tr>"
+        for q in dg["quarterly"])
+    red_months = sum(1 for m in dg["monthly"] if m["af_usd"] < 0)
+
+    ls = dg["long_short"]
+    ls_rows = "".join(
+        f"<tr><td>{side}</td><td>{s['trades']}</td>"
+        f"<td>{pct(s['win_rate'])}</td>"
+        f"<td class='{af_cls(s['af_usd'])}'>{signed_money(s['af_usd'])}</td></tr>"
+        for side, s in (("Long", ls["long"]), ("Short", ls["short"])))
+    exit_rows = "".join(
+        f"<tr><td>{html.escape(r)}</td><td>{s['trades']}</td>"
+        f"<td>{pct(s['win_rate'])}</td>"
+        f"<td class='{af_cls(s['af_usd'])}'>{signed_money(s['af_usd'])}</td></tr>"
+        for r, s in dg["exit_reasons"].items())
+    bucket_rows = "".join(
+        f"<tr><td>{html.escape(b['bucket'])}</td><td>{b['trades']}</td>"
+        f"<td>{pct(b['win_rate'])}</td>"
+        f"<td class='{af_cls(b['af_usd'])}'>{signed_money(b['af_usd'])}</td></tr>"
+        for b in dg["entry_time_buckets"])
+
+    rob_rows = []
+    for f in rb["friction_stress"]:
+        v = "PASS" if f["pass"]["passed"] else "FAIL"
+        rob_rows.append(
+            f"<tr><td>Friction {f['multiple']:.0f}× — "
+            f"${f['friction_per_unit_usd']:.2f}/share"
+            f"{' (frozen)' if f['multiple'] == 1.0 else ''}</td>"
+            f"<td>{f['trades']}</td>"
+            f"<td class='{af_cls(f['net_usd_after_friction'])}'><b>{signed_money(f['net_usd_after_friction'])}</b></td>"
+            f"<td class='{af_cls(f['halves']['h2']['net_after_friction_usd'])}'>{signed_money(f['halves']['h2']['net_after_friction_usd'])}</td>"
+            f"<td>{money(f['trough_after_friction_usd'])}</td>"
+            f"<td>{crit_marks(f['pass'])}</td>"
+            f"<td class='{'pos' if f['pass']['passed'] else 'neg'}'><b>{v}</b></td></tr>")
+    lag = rb["execution_lag"]
+    v = "PASS" if lag["pass"]["passed"] else "FAIL"
+    rob_rows.append(
+        f"<tr><td>Execution lag — fill at next bar's open"
+        f"<span class='sub'> ({lag['lag_voided']} voided, "
+        f"{lag['skipped_for_size']} skipped)</span></td>"
+        f"<td>{lag['trades']}</td>"
+        f"<td class='{af_cls(lag['net_usd_after_friction'])}'><b>{signed_money(lag['net_usd_after_friction'])}</b></td>"
+        f"<td class='{af_cls(lag['halves']['h2']['net_after_friction_usd'])}'>{signed_money(lag['halves']['h2']['net_after_friction_usd'])}</td>"
+        f"<td>{money(lag['trough_after_friction_usd'])}</td>"
+        f"<td>{crit_marks(lag['pass'])}</td>"
+        f"<td class='{'pos' if lag['pass']['passed'] else 'neg'}'><b>{v}</b></td></tr>")
+    subs = rb["subperiods"]
+    sub_line = " · ".join(
+        f"{b['bucket'].replace('_partial', ' (partial)')} "
+        f"<span class='{af_cls(b['af_usd'])}'>{signed_money(b['af_usd'])}</span>"
+        for b in subs["buckets"])
+    uw = dd["longest_underwater"]
+    b10 = dist["best_10_days"]
+
+    return (
+        "<h2>ORB-15 deep dive — the confirmed lead, under the "
+        "microscope</h2>"
+        "<p class='muted'>The Polygon verdict made ORB-15 the "
+        "project's lead SPY strategy, so it gets the full workup: "
+        "every diagnostic below is computed on its 498-trade "
+        "Polygon log on an after-friction basis (per-trade AF = "
+        "gross − $0.04/share; a 'win' is AF &gt; 0, so win rates "
+        "here can differ slightly from the gross headline). The "
+        "strategy itself is frozen in <b>ORB15_SPEC.md</b> "
+        "(project root, also on GitHub) — a future forward test "
+        "must match that document exactly. Full record: "
+        "results/orb15_deepdive.json (harness: "
+        "run_orb15_deepdive.py).</p>"
+        "<div class='panel'><h2 style='margin-top:0'>Where the "
+        "money comes from</h2>"
+        f"<p><b>Direction.</b> Near-identical win rates, very "
+        f"different money: the short side produced "
+        f"{signed_money(ls['short']['af_usd'])} of the "
+        f"{signed_money(ls['long']['af_usd'] + ls['short']['af_usd'])} "
+        f"total. On this tape, ORB-15 is mostly a short-side "
+        f"strategy.</p>"
+        "<div class='tblwrap'><table><thead><tr><th>Direction</th>"
+        "<th>Trades</th><th>Win rate (AF)</th><th>AF $</th></tr>"
+        f"</thead><tbody>{ls_rows}</tbody></table></div>"
+        "<p style='margin-top:14px'><b>Exits.</b> The 2R target "
+        "does the heavy lifting; the 15:55 flatten cohort — trades "
+        "that ran in the money without reaching 2R — is solidly "
+        "profitable too (73% win rate).</p>"
+        "<div class='tblwrap'><table><thead><tr><th>Exit reason</th>"
+        "<th>Trades</th><th>Win rate (AF)</th><th>AF $</th></tr>"
+        f"</thead><tbody>{exit_rows}</tbody></table></div>"
+        "<p style='margin-top:14px'><b>Entry time.</b> Most "
+        "triggers fire in the first bucket (09:45–09:59 closes), "
+        "but the 10:00–10:29 bucket converts better and earned "
+        "more from a quarter of the trades. Entries after 11:00 "
+        "are rare and worthless here.</p>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Entry bucket (ET)</th><th>Trades</th>"
+        "<th>Win rate (AF)</th><th>AF $</th></tr>"
+        f"</thead><tbody>{bucket_rows}</tbody></table></div></div>"
+        "<div class='panel'><h2 style='margin-top:0'>Monthly "
+        "consistency</h2>"
+        f"<p>{red_months} of {len(dg['monthly'])} months were "
+        f"red. The payoff shape is mechanical: wins cap near "
+        f"+$297 (2R of ~$150 risk, less friction) and losses near "
+        f"−$162, so no single day makes or breaks the strategy — "
+        f"but the 10 best days still account for "
+        f"{b10['share_of_total_net_pct']:.0f}% of the total net "
+        f"profit ({signed_money(b10['af_usd'])}).</p>"
+        "<div class='tblwrap'><table><thead><tr><th>Month</th>"
+        "<th>Trades</th><th>Win rate (AF)</th><th>AF $</th></tr>"
+        f"</thead><tbody>{month_rows}</tbody></table></div>"
+        "<div class='tblwrap' style='margin-top:10px'><table>"
+        "<thead><tr><th>Quarter</th><th>Trades</th>"
+        "<th>Win rate (AF)</th><th>AF $</th></tr></thead>"
+        f"<tbody>{quarter_rows}</tbody></table></div>"
+        f"<p style='margin-top:10px'>Average win "
+        f"{signed_money(dist['avg_win_usd'])}, average loss "
+        f"{signed_money(dist['avg_loss_usd'])}; longest streaks "
+        f"{dist['longest_win_streak']} wins / "
+        f"{dist['longest_loss_streak']} losses. Best day "
+        f"{html.escape(dist['best_days'][0]['date'])} "
+        f"({signed_money(dist['best_days'][0]['af_usd'])}); worst "
+        f"day {html.escape(dist['worst_days'][0]['date'])} "
+        f"({signed_money(dist['worst_days'][0]['af_usd'])}).</p>"
+        "</div>"
+        "<div class='panel'><h2 style='margin-top:0'>Drawdown "
+        "character — the honest cost</h2>"
+        f"<p>Maximum drawdown on the after-friction realized "
+        f"curve: <b>{money(dd['max_drawdown_usd'])}</b>, from the "
+        f"{html.escape(str(dd['peak_date']))} peak "
+        f"({money(dd['peak_equity_usd'])}) to "
+        f"{html.escape(str(dd['trough_date']))} "
+        f"({money(dd['trough_equity_usd'])}). The account then "
+        f"spent <b>{uw['trading_days']} consecutive trading "
+        f"days</b> below that peak and had <b>not recovered by "
+        f"the end of the window</b> — the strategy's worst stretch "
+        f"is its most recent one. The frozen trough test (never "
+        f"below $0) is about the early equity path, not this: a "
+        f"forward test must be sized to sit through a ~$2,000, "
+        f"months-long drawdown without flinching.</p></div>"
+        "<div class='panel'><h2 style='margin-top:0'>Robustness — "
+        "pre-declared stress tests, spec unchanged</h2>"
+        "<div class='tblwrap'><table><thead><tr><th>Stress</th>"
+        "<th>Trades</th><th>AF $</th><th>H2 AF</th><th>Trough</th>"
+        "<th>Criteria</th><th>Verdict</th></tr></thead>"
+        f"<tbody>{''.join(rob_rows)}</tbody></table></div>"
+        f"<p style='margin-top:10px'>The edge survives double the "
+        f"modeled friction and a full minute of execution lag. At "
+        f"triple friction it fails — on the second-half criterion "
+        f"only; the 24-month total stays positive.</p>"
+        f"<p><b>Sub-periods:</b> {sub_line} — "
+        f"{subs['green_count']} of {subs['bucket_count']} buckets "
+        f"green, but decaying: each of the last three buckets is "
+        f"smaller than the one before, and the final partial "
+        f"bucket is barely above water. Confirmed is not the same "
+        f"as strengthening.</p></div>"
+    )
+
+
 def strategy_lab_section() -> str:
     """Strategy Lab (build_strategy_lab.py + build_portfolio.py).
 
@@ -1165,6 +1360,8 @@ def main() -> int:
   {crosscheck_mes_section()}
 
   {polygon_section()}
+
+  {orb15_deepdive_section()}
 
   <div class="panel">
     <h2 style="margin-top:0">Broker: Tradovate (demo first)</h2>
