@@ -1,0 +1,75 @@
+{
+  "components": [
+    {
+      "run_id": "ib_break_spy_24mo",
+      "strategy": "ib_break",
+      "symbol": "SPY",
+      "standalone": {
+        "trades": 415,
+        "net_usd": 6872.31,
+        "net_r": 46.128,
+        "net_after_friction_usd": 5119.23,
+        "max_drawdown_usd": 2206.47
+      },
+      "trades_considered": 415,
+      "trades_taken": 411,
+      "trades_skipped_by_cap": 4,
+      "taken_net_usd": 4354.0
+    },
+    {
+      "run_id": "fcr_v0_spy_24mo",
+      "strategy": "fcr_v0",
+      "symbol": "SPY",
+      "standalone": {
+        "trades": 171,
+        "net_usd": 3231.21,
+        "net_r": 21.554,
+        "net_after_friction_usd": -181.55,
+        "max_drawdown_usd": 1947.69
+      },
+      "trades_considered": 171,
+      "trades_taken": 168,
+      "trades_skipped_by_cap": 3,
+      "taken_net_usd": -261.13
+    },
+    {
+      "run_id": "vwap_trend_spy_24mo",
+      "strategy": "vwap_trend",
+      "symbol": "SPY",
+      "standalone": {
+        "trades": 272,
+        "net_usd": 8622.05,
+        "net_r": 57.587,
+        "net_after_friction_usd": 4013.33,
+        "max_drawdown_usd": 3071.27
+      },
+      "trades_considered": 272,
+      "trades_taken": 268,
+      "trades_skipped_by_cap": 4,
+      "taken_net_usd": 4057.46
+    }
+  ],
+  "risk_cap_usd": 300.0,
+  "starting_balance_usd": 500.0,
+  "combined": {
+    "trades_considered": 858,
+    "trades_taken": 847,
+    "trades_skipped_by_cap": 11,
+    "wins": 338,
+    "losses": 509,
+    "win_rate": 0.3991,
+    "net_usd": 8150.33,
+    "ending_equity_usd": 8650.33,
+    "max_drawdown_usd": 4889.8,
+    "trough_usd": 500.0,
+    "trough_at": "start",
+    "naive_uncapped_sum_usd": 8951.01
+  },
+  "pass": {
+    "net_positive": true,
+    "trough_above_zero": true,
+    "passed": true
+  },
+  "simplifications": "Same as build_portfolio.py: realized pnl at exit times only (no mark-to-market), each trade keeps its own strategy's recorded size, $300 summed open-risk cap.",
+  "trade_log": "results/trades_portfolio24_combined.csv"
+}
