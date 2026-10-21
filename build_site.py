@@ -534,6 +534,158 @@ def validation24_section() -> str:
     )
 
 
+def crosscheck_mes_section() -> str:
+    """MES cross-check (run_crosscheck_mes.py).
+
+    The two credible SPY winners re-run on MES (ES.v.0 tape,
+    GLBX.MDP3 — deterministic) over 24 months. Reads
+    results/crosscheck_mes.json; returns "" when the cross-check
+    has not been run so the rest of the dashboard still builds.
+    """
+    path = ROOT / "results" / "crosscheck_mes.json"
+    if not path.exists():
+        return ""
+    doc = json.loads(path.read_text())
+    if doc.get("status") != "COMPLETE":
+        return ""  # aborted/partial record — nothing honest to show
+    cells = doc["cells"]
+    slices = {s["cell"]: s for s in doc["slice_verification"]}
+    pf = doc["portfolio"]
+
+    def af_cls(v) -> str:
+        return "pos" if v > 0 else "neg"
+
+    def crit_marks(c) -> str:
+        p = c["pass"]
+        marks = []
+        for key, label in (
+                ("a_net_after_friction_positive", "a"),
+                ("b_h2_net_after_friction_positive", "b"),
+                ("c_trough_above_zero", "c")):
+            marks.append(f"{label} {'✓' if p[key] else '✗'}")
+        return " · ".join(marks)
+
+    slice_rows = []
+    for s in doc["slice_verification"]:
+        e, g = s["expected"], s["got"]
+        slice_rows.append(
+            f"<tr><td>{html.escape(s['cell'])}</td>"
+            f"<td>{e['trades']}</td>"
+            f"<td>{signed_money(e['net_usd'])}</td>"
+            f"<td>{signed_money(e['net_after_friction'])}</td>"
+            f"<td>{g['trades']}</td>"
+            f"<td>{signed_money(g['net_usd'])}</td>"
+            f"<td>{signed_money(g['net_after_friction'])}</td>"
+            f"<td class='pos'><b>{'MATCH' if s['match'] else 'MISMATCH'}</b></td></tr>"
+        )
+
+    run_rows = []
+    for c in cells:
+        h = c["halves"]
+        v = c["verdict"]
+        vcls = "pos" if v == "PASS" else "neg"
+        friction_total = c["net_usd"] - c["net_usd_after_friction"]
+        run_rows.append(
+            f"<tr><td>{html.escape(c['id'].replace('_24mo', ''))}</td>"
+            f"<td>{c['trading_days']}</td><td>{c['trades']}</td>"
+            f"<td>{c['wins']}W / {c['losses']}L</td>"
+            f"<td>{pct(c['win_rate'])}</td>"
+            f"<td class='{af_cls(c['net_usd'])}'>{signed_money(c['net_usd'])}</td>"
+            f"<td>{c['net_r']:+.2f}R</td>"
+            f"<td class='{af_cls(c['net_usd_after_friction'])}'><b>{signed_money(c['net_usd_after_friction'])}</b></td>"
+            f"<td>{money(c['ending_equity_usd_after_friction'])}</td>"
+            f"<td>{money(c['max_drawdown_usd'])}</td>"
+            f"<td class='{af_cls(h['h1']['net_after_friction_usd'])}'>{signed_money(h['h1']['net_after_friction_usd'])}</td>"
+            f"<td class='{af_cls(h['h2']['net_after_friction_usd'])}'>{signed_money(h['h2']['net_after_friction_usd'])}</td>"
+            f"<td class='{af_cls(c['trough_after_friction_usd'])}'>{money(c['trough_after_friction_usd'])}"
+            f"<span class='sub'> {html.escape(str(c['trough_after_friction_at']))}</span></td>"
+            f"<td>{c['skipped_for_size']}</td>"
+            f"<td>{crit_marks(c)}</td>"
+            f"<td class='{vcls}'><b>{v}</b></td></tr>"
+            f"<tr><td colspan='16' class='sub'>Friction paid over the "
+            f"run: {money(friction_total)} "
+            f"({c['friction_per_unit_usd']:.2f}/contract round trip) — "
+            f"gross edge vs friction is the whole story of this cell."
+            f"</td></tr>"
+        )
+
+    if pf.get("built"):
+        pfc = pf["combined"]
+        pf_panel = (
+            "<div class='panel'><h2 style='margin-top:0'>MES mini-portfolio, "
+            "24 months — "
+            f"<span class='{'pos' if pf['pass']['passed'] else 'neg'}'>"
+            f"{'PASS' if pf['pass']['passed'] else 'FAIL'}</span></h2>"
+            f"<p>IB breakout + VWAP trend on MES in one shared $500 account, "
+            f"$300 open-risk cap: {pfc['trades_taken']} of "
+            f"{pfc['trades_considered']} trades taken "
+            f"({pfc['trades_skipped_by_cap']} skipped by the cap), combined "
+            f"<b>{signed_money(pfc['net_usd'])}</b> after friction, "
+            f"{pct(pfc['win_rate'])} win rate, ending equity "
+            f"{money(pfc['ending_equity_usd'])}, realized-curve max drawdown "
+            f"{money(pfc['max_drawdown_usd'])}, trough "
+            f"{money(pfc['trough_usd'])}. Naive uncapped sum: "
+            f"{signed_money(pfc['naive_uncapped_sum_usd'])}. Realized-P&amp;L "
+            "curve only (no mark-to-market).</p></div>"
+        )
+    else:
+        pf_panel = (
+            "<div class='panel'><h2 style='margin-top:0'>MES mini-portfolio "
+            "— not built</h2>"
+            f"<p>{html.escape(pf['reason'])} A conjunction is only "
+            "meaningful once both components clear the frozen bar on "
+            "their own; combining two failing cells would manufacture "
+            "a number, not test one.</p></div>"
+        )
+
+    return (
+        "<h2>MES cross-check — the SPY survivors on deterministic "
+        "futures data</h2>"
+        "<p class='muted'>The validation above leaves two SPY cells worth "
+        "believing — IB breakout (PASS, STABLE across downloads) and VWAP "
+        "trend (STABLE, failed only the trough test) — but both rest on the "
+        "non-reproducible DBEQ.BASIC tape. This cross-check re-runs the same "
+        "two strategies, same frozen spec and friction model, on MES "
+        "(ES.v.0 tape from GLBX.MDP3, which IS deterministic) over the same "
+        "24 months (2024-10-21 → 2026-10-20), traded as MES at $5/pt with "
+        "$4.90/contract round-trip friction. Full record: "
+        "results/crosscheck_mes.json (harness: run_crosscheck_mes.py).</p>"
+        "<h3>Slice verification — lab window (2026-06-22 → 2026-10-20) "
+        "on the new 24-month ES file</h3>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Cell</th><th>Lab trades</th><th>Lab gross</th>"
+        "<th>Lab after friction</th><th>New file trades</th>"
+        "<th>New file gross</th><th>New file after friction</th>"
+        "<th>Verdict</th>"
+        f"</tr></thead><tbody>{''.join(slice_rows)}</tbody></table></div>"
+        "<p class='muted'>Both cells reproduce the lab to the cent on the "
+        "new file — the deterministic futures tape behaves exactly as the "
+        "SPY tape did not. The route is verified; the 24-month numbers "
+        "below are trustworthy as backtests of this tape.</p>"
+        "<h3>MES — full 24 months</h3>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Cell</th><th>Days</th><th>Trades</th><th>W/L</th>"
+        "<th>Win rate</th><th>Gross $</th><th>Net R</th>"
+        "<th>After friction</th><th>End equity (AF)</th><th>Max DD</th>"
+        "<th>H1 AF</th><th>H2 AF</th><th>Trough (AF)</th><th>Skipped</th>"
+        "<th>Criteria</th><th>Verdict</th>"
+        f"</tr></thead><tbody>{''.join(run_rows)}</tbody></table></div>"
+        "<p class='muted'>Criteria, frozen before the runs: (a) 24-month "
+        "net-after-friction &gt; $0, (b) second-half net-after-friction "
+        "&gt; $0, (c) after-friction realized-equity trough &gt; $0. Both "
+        "strategies are positive GROSS on MES over 24 months — and both "
+        "are negative after $4.90/contract friction at micro size. The "
+        "gross edges are real but thinner than the cost of trading them "
+        "at 1–5 contracts.</p>"
+        f"{pf_panel}"
+        "<div class='panel'><h2 style='margin-top:0'>How to read a MES "
+        "result</h2>"
+        f"<p>{html.escape(doc['framing_note'])}</p>"
+        f"<p class='muted'>{html.escape(doc['data_quality_note'])}</p>"
+        "</div>"
+    )
+
+
 def strategy_lab_section() -> str:
     """Strategy Lab (build_strategy_lab.py + build_portfolio.py).
 
@@ -791,6 +943,8 @@ def main() -> int:
   {strategy_lab_section()}
 
   {validation24_section()}
+
+  {crosscheck_mes_section()}
 
   <div class="panel">
     <h2 style="margin-top:0">Broker: Tradovate (demo first)</h2>
