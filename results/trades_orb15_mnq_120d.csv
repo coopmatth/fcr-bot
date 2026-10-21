@@ -1,0 +1,5 @@
+date,direction,entry_time,entry_price,stop,target,exit_time,exit_price,exit_reason,contracts,pnl_usd,r_multiple,partial_units,partial_exit_time,partial_exit_price,partial_pnl_usd,friction_usd
+2026-07-03,short,10:13,29902.75,29956.0,29796.25,12:59,29903.75,DATA_END,1,-2.0,-0.019,0,,0.0,0.0,3.4
+2026-09-07,short,10:59,29592.0,29646.0,29484.0,12:59,29604.25,DATA_END,1,-24.5,-0.227,0,,0.0,0.0,3.4
+2026-09-16,long,09:45,29141.25,29081.5,29260.75,14:32,29081.5,STOP,1,-119.5,-1.0,0,,0.0,0.0,3.4
+2026-09-18,short,09:48,29798.25,29845.25,29704.25,10:16,29704.25,TARGET,1,188.0,2.0,0,,0.0,0.0,3.4
