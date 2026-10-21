@@ -162,7 +162,74 @@ cells is itself a form of overfitting: with 30 tries, chance alone
 manufactures a few good-looking cells. The variant columns also share
 most of their trades, so gold's 5-of-6 is not five independent
 confirmations. Nothing here is a validated edge; the gold column is
-a hypothesis for a longer test, not a result.
+a hypothesis for a longer test, not a result. (That longer test now
+exists — see "Gold 24-month validation" below.)
+
+## Gold 24-month validation (Databento, fetched 2026-10-21)
+
+The matrix above left exactly one hypothesis standing — gold — and
+this is the longer test it called for. Same frozen variant
+definitions (no retuning), same $500 account / $150 risk / ≤5
+contracts spec, on 24 months of true 1-minute GC bars: GC.v.0
+continuous (Databento GLBX.MDP3, ohlcv-1m), 2024-10-21 → 2026-10-20,
+516 RTH trading days, traded as MGC at $10/pt. The data cost $2.56
+of the account's signup credit; the raw CSV stays out of the repo
+(re-fetch with `fetch_databento_gold24.py`).
+
+Pass criteria were frozen **before** the run and applied
+mechanically, in the order V0 → V3 → V5; the first variant passing
+all three becomes the gold bot's strategy:
+
+- **(a)** 24-month net $ > 0 **and** net R > 0;
+- **(b)** the second half (2025-10-21 → 2026-10-20) also net positive on both;
+- **(c)** the simulated day-end equity trough stays above $0 (a real
+  $500 account would have survived the whole run).
+
+| Variant | Trades | Win rate | Net $ | Net R | End equity | Max DD | Trough | Worst streak | (a) | (b) | (c) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| V0 baseline | 224 (64W/160L) | 28.6% | **+$2,191.00** | +26.26R | $2,691.00 | $1,543.00 | $355.00 (2024-10-22) | 9 | ✓ | ✓ | ✓ |
+| V3 partials+BE | 224 (94W/130L) | 42.0% | +$2,213.50 | +22.35R | $2,713.50 | $1,456.50 | $355.00 (2024-10-22) | 6 | ✓ | **✗** | ✓ |
+| V5 combined | 87 (39W/48L) | 44.8% | +$1,654.00 | +12.04R | $2,154.00 | $839.00 | $379.00 (2024-11-08) | 5 | ✓ | ✓ | ✓ |
+
+Half splits (net $ / net R): V0 — H1 +$1,454.00 / +24.20R (117
+trades), H2 +$737.00 / **+2.06R** (107 trades). V3 — H1 +$1,937.00 /
++24.60R, H2 +$276.50 / **−2.25R**. V5 — H1 +$1,458.00 / +11.99R,
+H2 +$196.00 / +0.05R. Full record: `results/gold24.json`; per-variant
+trade logs in `results/`; independent recompute in
+`verify_gold24.py` (all headline stats and half splits re-derive
+from the CSVs, V0 invariants hold, and the 60-day MGC V0 run above
+reproduces exactly — untouched).
+
+**Result: V0 baseline passes all three criteria and is the bot's
+strategy.** Two mechanical notes matter more than the headline.
+First, V3 actually made *more dollars* than V0 — and still failed,
+because criterion (b) requires the second half to be positive in R
+as well as dollars, and partials shrank its recent winners below
+its losers (−2.25R). The criteria were frozen precisely so this
+call isn't made by feel. Second, V5 also passed everything but is
+checked after V0 in the frozen order.
+
+Honest reading: 224 trades is a real sample, and a 28.6% win rate
+clears the 25% breakeven a fixed 3:1 target needs. But the edge
+decayed hard — the second year contributed only +2.06R of the
++26.26R total — the max drawdown ($1,543) is three times the $500
+starting balance (it arrived in year two, after equity had grown
+toward ~$2,960, which is the only reason the account was never in
+danger), and **no slippage, spread, or commissions are modeled**:
+224 round trips of micro commissions plus a tick or two per side
+would take a real bite out of +$2,191. This is a hypothesis that
+survived a 24-month test — the strongest result in this repo — not
+a guarantee.
+
+Data quality: 22 of the 516 RTH days have fewer than 300 session
+bars (a full session is 390). Most are scheduled early closes and
+holiday sessions (Christmas Eve ×2 at 255 bars, Jul 3 / Jul 4,
+Thanksgiving week, etc.). Databento separately flagged 2025-09-17,
+2025-09-24 and 2025-11-28 as degraded quality; none of those three
+is a short-bar day in this file, so the degradation did not remove
+RTH bars. Short days were **not** dropped — every day with session
+bars ran through the engine on whatever bars exist. The full list
+is in `results/gold24.json`.
 
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
@@ -230,7 +297,8 @@ unit-tested with mocked transports** (auth flow, token caching/renewal,
 front-month contract resolution, 1-minute chart-bar parsing into the
 engine's `Bar` type, bracket/OSO order payload construction,
 position/order reads, liquidate/flatten, and kill-switch refusal —
-40 tests pass across the whole repo). It has never touched the real
+60 tests pass across the whole repo, incl. the variant gates and the
+gold runner). It has never touched the real
 Tradovate API: **no account or credentials exist yet**, so nothing is
 blocked except first contact.
 
@@ -253,6 +321,75 @@ blocked except first contact.
 6. Live trading is a **separate later decision** requiring Matt's
    explicit go. By construction the code cannot trade live while
    `LIVE_TRADING_ENABLED = False`.
+
+## Gold bot
+
+Built 2026-10-21, the day the validation above passed. **Status:
+NOT deployed anywhere. It has never connected to the real Tradovate
+API and has never placed an order** — no Tradovate account or demo
+API key exists yet. It is covered by mocked unit tests
+(`tests/test_gold_bot.py`) and by `--dry-run` replays against
+recorded days, nothing more.
+
+What it is: `gold_bot.py` + `config_gold.yaml` — a daily runner for
+the winning variant (V0 baseline, frozen) on MGC only, wired through
+the existing `tradovate/` demo layer (no second broker client):
+
+1. Resolves the MGC front-month contract (`contract/suggest`).
+2. Feeds closed 1-minute RTH bars into the same `FCREngine` the
+   backtester uses (WebSocket stream via `md/getChart`, with the
+   in-progress bar deduplicated to each minute's final update; or
+   any bar iterable — `--bars-csv` replays a recorded day).
+3. The moment the engine confirms a setup, places the identical
+   trade on the **demo** account: market entry with the engine's
+   stop and +3R target attached as an OSO bracket
+   (`order/placeOSO`). The bracket manages stop/target broker-side.
+   (V0 has no partials, so there is nothing else to manage.)
+4. At the 15:55 ET bar, liquidates anything still open
+   (`order/liquidatePosition`); if the bar stream dies mid-trade it
+   force-closes and flattens too. One trade per day, enforced by
+   the engine.
+
+Safety, hard-enforced: the runner refuses to start if
+`LIVE_TRADING_ENABLED` is not `False`, if the execution client's
+base URL is not the demo host, or if the strategy config drifts
+from the frozen validated spec (symbol MGC, $10/pt, $150 risk,
+≤5 contracts, 3.0 RR, every variant flag off) — retuning means
+re-validating first. Credentials come only from the
+`TRADOVATE_DEMO_*` environment variables (`.env.example`); nothing
+is read from repo files.
+
+The winning variant it runs, in one line: V0 baseline, 24 months,
+224 trades, 28.6% win rate, **+$2,191.00 / +26.26R**, ending equity
+$2,691.00 on the $500 paper account, max drawdown $1,543.00, trough
+$355.00 — see the validation section above for the full record and
+the caveats (second-half decay, no costs modeled).
+
+How Matt runs it on demo, once the account exists:
+
+```bash
+cd ~/workspace/fcr-bot
+# 1. Credentials in the environment ONLY (from a password manager —
+#    never pasted in chat, never written into this repo):
+#    TRADOVATE_DEMO_USERNAME / _PASSWORD / _API_KEY / _API_SECRET / _CID
+# 2. First contact: replay a recorded day against the demo account:
+.venv/bin/python gold_bot.py --bars-csv data/gc_1m_24mo.csv --date 2024-10-21
+# 3. A live session day (needs `pip install websocket-client`):
+.venv/bin/python gold_bot.py
+# No-credential rehearsal — records the orders it WOULD place:
+.venv/bin/python gold_bot.py --dry-run --bars-csv data/gc_1m_24mo.csv --date 2024-10-21
+```
+
+What Matt still needs to do before step 2 can run — the same list
+as the Tradovate section below, unchanged: open a Tradovate
+account; fund it (≥ $1,000 — the API Access add-on requires a live
+funded account); subscribe to API Access ($25/mo); generate a
+**demo** API key; hand the credentials over via secure entry only
+(password manager / vault), **never in chat**. And the market-data
+caveat still applies: demo data is simulated; a live-money version
+(not built, kill switch off) would additionally need the CME data
+arrangement sorted. Live trading remains a separate decision that
+this code cannot make.
 
 ## Judgment calls / assumptions
 
@@ -295,6 +432,7 @@ blocked except first contact.
 
 ```
 config.yaml            strategy parameters (MNQ, risk, sizing, times)
+config_gold.yaml       FROZEN gold-bot strategy parameters (MGC, V0)
 fcr/patterns.py        Bar/FVG types, FVG + engulfing detectors (pure fns)
 fcr/engine.py          FCREngine state machine (pure Python, no pandas)
 fcr/config.py          YAML config loader + sizing normalization
@@ -307,9 +445,15 @@ tradovate/             DEMO-only Tradovate API layer (kill-switched)
   execution.py         bracket (OSO) entries, status reads, flatten
 run_backtest.py        single-run CLI entry point
 run_matrix.py          the 4-run Yahoo matrix -> results/summary.json
+run_experiments.py     6-variant x 5-symbol matrix -> results/experiments.json
+verify_experiments.py  independent checks of the experiment matrix
+run_gold24.py          gold 24-month validation -> results/gold24.json
+verify_gold24.py       independent checks of the gold validation
+gold_bot.py            gold daily paper runner (Tradovate DEMO only)
 build_site.py          regenerates site/index.html from results/
 site/index.html        static dashboard (deployed to Vercel)
-tests/                 test_fcr.py (engine/sizing/equity), test_tradovate.py
+tests/                 test_fcr.py (engine/sizing/equity), test_tradovate.py,
+                       test_variants.py, test_gold_bot.py (gold runner)
 .env.example           credential env-var names (placeholders only)
 data/                  cached bar data (gitignored)
 results/               trade logs + summary.json (gitignored locally)
@@ -317,8 +461,9 @@ results/               trade logs + summary.json (gitignored locally)
 
 ## How to run
 
-Tests (40: engine math/scenarios, contract sizing & cap, skipped-for-
-size, equity tracking, Tradovate mocks incl. kill-switch refusal):
+Tests (60: engine math/scenarios, contract sizing & cap, skipped-for-
+size, equity tracking, Tradovate mocks incl. kill-switch refusal,
+variant gates, and the gold runner wiring):
 
 ```bash
 cd ~/workspace/fcr-bot
