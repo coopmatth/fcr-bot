@@ -531,6 +531,42 @@ no additional slippage modeled). The raw Polygon JSONL and CSV
 stay local like all data files; the code and results are in
 this repo.
 
+## ORB-15 focus — deep dive on the confirmed lead (2026-10-21)
+
+With ORB-15 the confirmed SPY lead, it got a dedicated workup
+(`run_orb15_deepdive.py`, results in `results/orb15_deepdive.json`;
+dashboard section "ORB-15 deep dive"). The strategy's rules are
+now frozen as its identity document: **`ORB15_SPEC.md`** — any
+future forward test must match it exactly.
+
+Diagnostics on the 498-trade Polygon log (after-friction basis —
+a "win" is AF > 0): 16 of 25 months green; the short side
+produced +$5,448.56 of the +$6,803.40 (231 trades) vs longs
++$1,354.84 (267 trades) at near-identical win rates; exits were
+120 TARGET (+$35,267.93), 251 STOP (−$38,321.87), 126
+EOD_FLATTEN (+$9,692.89, 73% AF win rate), 1 DATA_END. Payoffs
+are mechanical (±2R/−1R of ~$150 risk): largest win +$297.57,
+largest loss −$162.00, average win +$218.24 vs average loss
+−$139.23; the 10 best days hold 43.6% of the total net profit.
+The honest cost: max drawdown (AF, daily realized) $1,992.55
+from 2026-03-02 to 2026-07-14, and the account was still
+underwater after 160 consecutive trading days at the window's
+end — unrecovered, and the strategy's worst stretch is its
+most recent one.
+
+Robustness (pre-declared; spec untouched): friction at 2×
+($0.08/share) still **passes** (+$4,998.00, H2 +$350.88); at 3×
+($0.12/share) it **fails** on the second-half criterion only
+(H2 −$427.28; 24-month total +$3,192.60). A 1-bar execution lag
+(fill at the next bar's open, signal-time stop/target, via the
+`entry_delay_bars` stress harness in `fcr/strategies_intraday.py`)
+passes at +$6,807.14 with 0 voided signals — the result does not
+depend on capturing the signal bar's exact close. Sub-periods
+are 5/5 green (2024H2-partial +$1,946.20 · 2025H1 +$2,914.58 ·
+2025H2 +$1,223.57 · 2026H1 +$587.86 · 2026H2-partial +$131.19)
+but decaying — each of the last three buckets is smaller than
+the one before. Confirmed is not the same as strengthening.
+
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
 Execution model: entries fill at the engulfing bar's close; exits at
@@ -752,6 +788,8 @@ verify_gold24.py       independent checks of the gold validation
 gold_bot.py            gold daily paper runner (Tradovate DEMO only)
 fetch_polygon_spy.py   Polygon JSONL -> data/spy_1m_polygon.csv (SIP tape)
 run_polygon_spy.py     SPY re-check on Polygon -> results/polygon_verdict.json
+ORB15_SPEC.md          ORB-15 FROZEN spec (the strategy's identity document)
+run_orb15_deepdive.py  ORB-15 diagnostics + robustness -> results/orb15_deepdive.json
 build_site.py          regenerates site/index.html from results/
 site/index.html        static dashboard (deployed to Vercel)
 tests/                 test_fcr.py (engine/sizing/equity), test_tradovate.py,
