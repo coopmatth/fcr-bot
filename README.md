@@ -450,6 +450,87 @@ harvesting it. Data note: the GLBX degraded-day flags
 (2025-09-17, 2025-09-24, 2025-11-28) apply dataset-wide; those
 days are retained in full in the ES file, nothing dropped.
 
+## SPY final verdict — Polygon (SIP) tape (2026-10-21)
+
+The validation above ends with every SPY verdict resting on
+Databento's DBEQ.BASIC feed — a feed the validation itself proved
+is sampled and non-reproducible. The arbiter for that problem was
+always the same: re-run the four SPY cells on a consolidated
+tape. That run is now done, on Polygon.io's SIP 1-minute
+aggregates (`data/spy_1m_polygon.csv`, pulled through the
+`custom.polygon` connector with `adjusted=false` — raw prices,
+the project's convention; harness `run_polygon_spy.py`, converter
+`fetch_polygon_spy.py`, full record `results/polygon_verdict.json`).
+
+**Tape verification, before any strategy number was trusted.**
+(1) *Consolidation:* SPY really trades 40–90M shares a day, and
+Polygon's daily sums land there — 93.4M (2025-03-10), 57.9M
+(2026-06-15), 42.1M (2026-10-15) — versus the Databento files'
+~2M a day (25–39× less). The DBEQ.BASIC volumes are a sampled
+fraction of the market; Polygon's are the market. (2)
+*Determinism:* an independent re-pull of 2026-06-15 → 2026-06-19
+returned 3,644 bars identical to the main pull, 0 differing in
+OHLCV — the property DBEQ.BASIC lacked. (3) *Distance between
+the tapes:* on 194,084 shared RTH timestamps, 84.6% differ in
+close, but the median difference is only $0.025 (the two
+Databento pulls differed by a median $0.11): a sampled feed's
+minute "close" is effectively a random print inside the minute,
+where the SIP close is the actual last trade. Cent-level
+differences — with thousand-dollar consequences below.
+
+**The four cells, same 24 months (2024-10-21 → 2026-10-19),
+same frozen spec, same $0.04/share friction, same pass test:**
+
+| Cell | Trades | W/L | WR | Gross $ | Net R | After friction | H1 AF | H2 AF | Trough (AF) | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| IB breakout SPY | 413 | 172/241 | 41.6% | +$2,350.87 | +15.71R | **+$644.31** | −$190.97 | +$835.28 | −$1,785.72 (2026-04-10) | FAIL (c) |
+| FCR V0 SPY | 191 | 49/142 | 25.7% | +$550.20 | +3.64R | **−$3,072.80** | +$2,805.93 | −$5,878.73 | −$3,370.02 (2026-08-31) | FAIL (a, b, c) |
+| VWAP trend SPY | 263 | 100/163 | 38.0% | +$4,727.26 | +31.55R | **+$999.10** | +$874.81 | +$124.29 | +$171.81 (2024-10-25) | PASS |
+| ORB-15 SPY | 498 | 214/284 | 43.0% | +$8,608.80 | +57.81R | **+$6,803.40** | +$5,674.36 | +$1,129.04 | +$339.98 (2024-10-21) | PASS |
+
+**Three-sample verdict** — a cell is CONFIRMED only if it
+passes the frozen test on Polygon AND was positive after
+friction on the Databento 24mo file:
+
+| Strategy | Databento AF | Databento verdict | Polygon AF | Polygon verdict | Final call |
+| --- | --- | --- | --- | --- | --- |
+| IB breakout | +$5,119.23 | PASS | +$644.31 | FAIL | **NOT CONFIRMED** |
+| FCR V0 | −$181.55 | FAIL | −$3,072.80 | FAIL | **NOT CONFIRMED** |
+| VWAP trend | +$4,013.33 | FAIL (trough only) | +$999.10 | PASS | **CONFIRMED** |
+| ORB-15 | +$7,157.36 | PASS (single-sample, unstable) | +$6,803.40 | PASS | **CONFIRMED** |
+
+**The headline is IB breakout's collapse.** The one clean
+survivor of the Databento validation does not survive the real
+tape: +$644.31 after friction instead of +$5,119.23, a negative
+first half, and a −$1,785.72 realized trough that would have
+wiped out a real $500 account in April 2026. Its Databento edge
+was substantially an artifact of the sampled feed. Conversely,
+ORB-15 — dismissed above as "PASS (single-sample, unstable)"
+because the two Databento pulls flipped its sign in the small
+120-day window — passes at nearly the same magnitude on both
+tapes over 24 months (+$6,803.40 vs +$7,157.36); the flip was a
+small-window artifact, not a property of the strategy. VWAP
+trend also confirms, more modestly: it passes every criterion
+on the SIP tape, though its second half is thin (+$124.29) —
+an edge, not a fortune. FCR V0 is negative after friction on
+every SPY sample and is done on this symbol.
+
+**The trio portfolio does not confirm.** IB breakout + FCR V0
++ VWAP trend in one shared $500 account ($300 open-risk cap)
+on the Polygon file: 856 of 867 trades taken, **−$1,556.46**
+after friction, trough −$2,382.42 (2026-10-09), realized max
+drawdown $8,470.71. The Databento portfolio's +$8,150.33 PASS
+was a sampled-tape artifact — FCR V0 alone drags −$3,072.80
+standalone and IB breakout's contribution shrinks to +$644.31.
+A portfolio rebuilt from the *confirmed* cells (ORB-15 + VWAP
+trend) is a different object and would need its own frozen
+test; it is not claimed here.
+
+Costs remain the lab's friction model ($0.04/share round trip,
+no additional slippage modeled). The raw Polygon JSONL and CSV
+stay local like all data files; the code and results are in
+this repo.
+
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
 Execution model: entries fill at the engulfing bar's close; exits at
@@ -669,6 +750,8 @@ verify_experiments.py  independent checks of the experiment matrix
 run_gold24.py          gold 24-month validation -> results/gold24.json
 verify_gold24.py       independent checks of the gold validation
 gold_bot.py            gold daily paper runner (Tradovate DEMO only)
+fetch_polygon_spy.py   Polygon JSONL -> data/spy_1m_polygon.csv (SIP tape)
+run_polygon_spy.py     SPY re-check on Polygon -> results/polygon_verdict.json
 build_site.py          regenerates site/index.html from results/
 site/index.html        static dashboard (deployed to Vercel)
 tests/                 test_fcr.py (engine/sizing/equity), test_tradovate.py,
