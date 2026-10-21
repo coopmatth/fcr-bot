@@ -1,0 +1,183 @@
+{
+  "generated_at": "2026-10-21T12:48:44-04:00",
+  "question": "Do the two credible SPY winners (IB breakout, VWAP trend) hold up on MES \u2014 the same index on the deterministic GLBX.MDP3 futures tape \u2014 over 24 months, net of friction?",
+  "window": {
+    "start": "2024-10-21",
+    "end": "2026-10-20"
+  },
+  "data_file": "data/es_1m_24mo.csv",
+  "data_window": {
+    "start": "2024-10-21",
+    "end": "2026-10-20",
+    "bars": 707313
+  },
+  "data_quality_note": "Databento flagged the whole GLBX.MDP3 dataset for degraded quality on 2025-09-17, 2025-09-24 and 2025-11-28 (the same flags noted on the gold file); the ES file retains those days in full (bars in file: 2025-09-17: 1377, 2025-09-24: 1379, 2025-11-28: 285) \u2014 nothing dropped.",
+  "spec": {
+    "starting_balance_usd": 500.0,
+    "risk_budget_usd": 150,
+    "traded_as": "MES, $5/pt, friction $4.90/contract round trip (same as the lab)",
+    "pass_test": "(a) 24m net-after-friction > 0 AND (b) H2 (2025-10-21 -> end) net-after-friction > 0 AND (c) after-friction realized-equity trough > $0",
+    "halves": {
+      "h1": "2024-10-21 -> 2025-10-20",
+      "h2": "2025-10-21 -> end"
+    }
+  },
+  "framing_note": "MES and SPY are the same index, but ES futures trade nearly around the clock, so the 9:30 ET 'open' for MES is a continuation of overnight trading rather than SPY's auction open \u2014 a strategy keyed to the cash open can legitimately behave differently on the two, so a MES failure weakens but does not by itself falsify the SPY result, and a MES pass is strong feed-independent confirmation.",
+  "slice_verification": [
+    {
+      "cell": "ib_break_mes",
+      "lab_run_id": "ib_break_mes_120d",
+      "window": {
+        "start": "2026-06-22",
+        "end": "2026-10-20"
+      },
+      "expected": {
+        "trades": 64,
+        "net_usd": 728.77,
+        "net_after_friction": 224.07
+      },
+      "got": {
+        "trades": 64,
+        "net_usd": 728.77,
+        "net_after_friction": 224.07
+      },
+      "match": true
+    },
+    {
+      "cell": "vwap_trend_mes",
+      "lab_run_id": "vwap_trend_mes_120d",
+      "window": {
+        "start": "2026-06-22",
+        "end": "2026-10-20"
+      },
+      "expected": {
+        "trades": 47,
+        "net_usd": -1313.94,
+        "net_after_friction": -2210.64
+      },
+      "got": {
+        "trades": 47,
+        "net_usd": -1313.94,
+        "net_after_friction": -2210.64
+      },
+      "match": true
+    }
+  ],
+  "cells": [
+    {
+      "id": "ib_break_mes_24mo",
+      "strategy": "ib_break",
+      "strategy_label": "Initial Balance breakout",
+      "symbol": "MES",
+      "symbol_key": "mes",
+      "data_file": "data/es_1m_24mo.csv",
+      "data_symbol": "ES.v.0 tape (GLBX.MDP3)",
+      "point_value_usd": 5.0,
+      "friction_per_unit_usd": 4.9,
+      "window": {
+        "start": "2024-10-21",
+        "end": "2026-10-20"
+      },
+      "trading_days": 515,
+      "trades": 371,
+      "wins": 162,
+      "losses": 209,
+      "win_rate": 0.4367,
+      "net_usd": 3040.01,
+      "net_r": 28.705,
+      "net_usd_after_friction": -267.49,
+      "ending_equity_usd": 3540.01,
+      "ending_equity_usd_after_friction": 232.51,
+      "max_drawdown_usd": 2435.63,
+      "skipped_for_size": 54,
+      "trade_log": "results/trades_ib_break_mes_24mo.csv",
+      "halves": {
+        "h1": {
+          "trades": 194,
+          "net_after_friction_usd": -396.84,
+          "net_r": 15.967
+        },
+        "h2": {
+          "trades": 177,
+          "net_after_friction_usd": 129.35,
+          "net_r": 12.738
+        }
+      },
+      "trough_after_friction_usd": -1441.93,
+      "trough_after_friction_at": "2026-04-10 11:32",
+      "pass": {
+        "a_net_after_friction_positive": false,
+        "b_h2_net_after_friction_positive": true,
+        "c_trough_above_zero": false,
+        "passed": false
+      },
+      "verdict": "FAIL"
+    },
+    {
+      "id": "vwap_trend_mes_24mo",
+      "strategy": "vwap_trend",
+      "strategy_label": "VWAP trend pullback",
+      "symbol": "MES",
+      "symbol_key": "mes",
+      "data_file": "data/es_1m_24mo.csv",
+      "data_symbol": "ES.v.0 tape (GLBX.MDP3)",
+      "point_value_usd": 5.0,
+      "friction_per_unit_usd": 4.9,
+      "window": {
+        "start": "2024-10-21",
+        "end": "2026-10-20"
+      },
+      "trading_days": 515,
+      "trades": 272,
+      "wins": 106,
+      "losses": 166,
+      "win_rate": 0.3897,
+      "net_usd": 5088.63,
+      "net_r": 43.133,
+      "net_usd_after_friction": -105.37,
+      "ending_equity_usd": 5588.63,
+      "ending_equity_usd_after_friction": 394.63,
+      "max_drawdown_usd": 2119.17,
+      "skipped_for_size": 0,
+      "trade_log": "results/trades_vwap_trend_mes_24mo.csv",
+      "halves": {
+        "h1": {
+          "trades": 140,
+          "net_after_friction_usd": 780.7,
+          "net_r": 28.945
+        },
+        "h2": {
+          "trades": 132,
+          "net_after_friction_usd": -886.07,
+          "net_r": 14.188
+        }
+      },
+      "trough_after_friction_usd": -14.16,
+      "trough_after_friction_at": "2025-06-25 10:44",
+      "pass": {
+        "a_net_after_friction_positive": false,
+        "b_h2_net_after_friction_positive": false,
+        "c_trough_above_zero": false,
+        "passed": false
+      },
+      "verdict": "FAIL"
+    }
+  ],
+  "portfolio": {
+    "built": false,
+    "reason": "Mini-portfolio not built: the frozen rule builds it only if BOTH cells pass; failed: ib_break_mes_24mo, vwap_trend_mes_24mo."
+  },
+  "spy_reference": {
+    "ib_break": {
+      "net_usd_after_friction": 5119.23,
+      "verdict": "PASS",
+      "cross_sample_stability": "STABLE"
+    },
+    "vwap_trend": {
+      "net_usd_after_friction": 4013.33,
+      "verdict": "FAIL",
+      "cross_sample_stability": "STABLE"
+    }
+  },
+  "status": "COMPLETE"
+}
