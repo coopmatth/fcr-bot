@@ -1,0 +1,656 @@
+{
+  "generated_at": "2026-10-21T13:29:47-04:00",
+  "strategy": "orb15",
+  "strategy_label": "ORB 15-min opening range breakout (2R target)",
+  "symbol": "SPY",
+  "data_file": "data/spy_1m_polygon.csv",
+  "data_note": "Polygon.io consolidated (SIP) 1-minute aggregates, adjusted=false (raw prices)",
+  "window": {
+    "start": "2024-10-21",
+    "end": "2026-10-19"
+  },
+  "basis": "All diagnostics on an after-friction basis: per-trade AF = pnl_usd - friction_usd at the frozen $0.04/share round trip. A trade counts as a win when its AF pnl > 0 (the headline cell win rate, 43.0%, is on gross pnl). Equity starts at $500; one trade per day by construction.",
+  "baseline_check": {
+    "matched_polygon_verdict": true,
+    "checks": {
+      "trades": true,
+      "net_af": true,
+      "h1_af": true,
+      "h2_af": true,
+      "trough": true
+    }
+  },
+  "baseline": {
+    "trades": 498,
+    "net_usd_after_friction": 6803.4,
+    "halves": {
+      "h1": {
+        "trades": 250,
+        "net_after_friction_usd": 5674.36,
+        "net_r": 45.146
+      },
+      "h2": {
+        "trades": 248,
+        "net_after_friction_usd": 1129.04,
+        "net_r": 12.665
+      }
+    },
+    "trough_after_friction_usd": 339.98,
+    "pass": {
+      "a_net_after_friction_positive": true,
+      "b_h2_net_after_friction_positive": true,
+      "c_trough_above_zero": true,
+      "passed": true
+    }
+  },
+  "diagnostics": {
+    "monthly": [
+      {
+        "month": "2024-10",
+        "trades": 9,
+        "wins": 5,
+        "win_rate": 0.5556,
+        "af_usd": 576.44
+      },
+      {
+        "month": "2024-11",
+        "trades": 20,
+        "wins": 11,
+        "win_rate": 0.55,
+        "af_usd": 1203.64
+      },
+      {
+        "month": "2024-12",
+        "trades": 21,
+        "wins": 8,
+        "win_rate": 0.381,
+        "af_usd": 166.12
+      },
+      {
+        "month": "2025-01",
+        "trades": 20,
+        "wins": 9,
+        "win_rate": 0.45,
+        "af_usd": 496.3
+      },
+      {
+        "month": "2025-02",
+        "trades": 19,
+        "wins": 11,
+        "win_rate": 0.5789,
+        "af_usd": 1380.29
+      },
+      {
+        "month": "2025-03",
+        "trades": 21,
+        "wins": 10,
+        "win_rate": 0.4762,
+        "af_usd": 263.56
+      },
+      {
+        "month": "2025-04",
+        "trades": 21,
+        "wins": 9,
+        "win_rate": 0.4286,
+        "af_usd": 828.64
+      },
+      {
+        "month": "2025-05",
+        "trades": 21,
+        "wins": 8,
+        "win_rate": 0.381,
+        "af_usd": -119.06
+      },
+      {
+        "month": "2025-06",
+        "trades": 20,
+        "wins": 8,
+        "win_rate": 0.4,
+        "af_usd": 64.85
+      },
+      {
+        "month": "2025-07",
+        "trades": 22,
+        "wins": 12,
+        "win_rate": 0.5455,
+        "af_usd": 1381.34
+      },
+      {
+        "month": "2025-08",
+        "trades": 21,
+        "wins": 9,
+        "win_rate": 0.4286,
+        "af_usd": 360.68
+      },
+      {
+        "month": "2025-09",
+        "trades": 21,
+        "wins": 5,
+        "win_rate": 0.2381,
+        "af_usd": -1279.39
+      },
+      {
+        "month": "2025-10",
+        "trades": 23,
+        "wins": 9,
+        "win_rate": 0.3913,
+        "af_usd": 346.88
+      },
+      {
+        "month": "2025-11",
+        "trades": 19,
+        "wins": 5,
+        "win_rate": 0.2632,
+        "af_usd": -488.96
+      },
+      {
+        "month": "2025-12",
+        "trades": 22,
+        "wins": 10,
+        "win_rate": 0.4545,
+        "af_usd": 903.02
+      },
+      {
+        "month": "2026-01",
+        "trades": 20,
+        "wins": 8,
+        "win_rate": 0.4,
+        "af_usd": -97.76
+      },
+      {
+        "month": "2026-02",
+        "trades": 19,
+        "wins": 14,
+        "win_rate": 0.7368,
+        "af_usd": 1861.39
+      },
+      {
+        "month": "2026-03",
+        "trades": 22,
+        "wins": 7,
+        "win_rate": 0.3182,
+        "af_usd": -817.5
+      },
+      {
+        "month": "2026-04",
+        "trades": 21,
+        "wins": 6,
+        "win_rate": 0.2857,
+        "af_usd": -543.67
+      },
+      {
+        "month": "2026-05",
+        "trades": 20,
+        "wins": 7,
+        "win_rate": 0.35,
+        "af_usd": -208.84
+      },
+      {
+        "month": "2026-06",
+        "trades": 20,
+        "wins": 10,
+        "win_rate": 0.5,
+        "af_usd": 394.24
+      },
+      {
+        "month": "2026-07",
+        "trades": 22,
+        "wins": 10,
+        "win_rate": 0.4545,
+        "af_usd": 162.03
+      },
+      {
+        "month": "2026-08",
+        "trades": 20,
+        "wins": 9,
+        "win_rate": 0.45,
+        "af_usd": 256.24
+      },
+      {
+        "month": "2026-09",
+        "trades": 21,
+        "wins": 8,
+        "win_rate": 0.381,
+        "af_usd": -196.47
+      },
+      {
+        "month": "2026-10",
+        "trades": 13,
+        "wins": 5,
+        "win_rate": 0.3846,
+        "af_usd": -90.61
+      }
+    ],
+    "quarterly": [
+      {
+        "quarter": "2024Q4",
+        "trades": 50,
+        "wins": 24,
+        "win_rate": 0.48,
+        "af_usd": 1946.2
+      },
+      {
+        "quarter": "2025Q1",
+        "trades": 60,
+        "wins": 30,
+        "win_rate": 0.5,
+        "af_usd": 2140.15
+      },
+      {
+        "quarter": "2025Q2",
+        "trades": 62,
+        "wins": 25,
+        "win_rate": 0.4032,
+        "af_usd": 774.43
+      },
+      {
+        "quarter": "2025Q3",
+        "trades": 64,
+        "wins": 26,
+        "win_rate": 0.4062,
+        "af_usd": 462.63
+      },
+      {
+        "quarter": "2025Q4",
+        "trades": 64,
+        "wins": 24,
+        "win_rate": 0.375,
+        "af_usd": 760.94
+      },
+      {
+        "quarter": "2026Q1",
+        "trades": 61,
+        "wins": 29,
+        "win_rate": 0.4754,
+        "af_usd": 946.13
+      },
+      {
+        "quarter": "2026Q2",
+        "trades": 61,
+        "wins": 23,
+        "win_rate": 0.377,
+        "af_usd": -358.27
+      },
+      {
+        "quarter": "2026Q3",
+        "trades": 63,
+        "wins": 27,
+        "win_rate": 0.4286,
+        "af_usd": 221.8
+      },
+      {
+        "quarter": "2026Q4",
+        "trades": 13,
+        "wins": 5,
+        "win_rate": 0.3846,
+        "af_usd": -90.61
+      }
+    ],
+    "long_short": {
+      "long": {
+        "trades": 267,
+        "wins": 115,
+        "win_rate": 0.4307,
+        "af_usd": 1354.84
+      },
+      "short": {
+        "trades": 231,
+        "wins": 98,
+        "win_rate": 0.4242,
+        "af_usd": 5448.56
+      }
+    },
+    "exit_reasons": {
+      "DATA_END": {
+        "trades": 1,
+        "wins": 1,
+        "win_rate": 1.0,
+        "af_usd": 164.45
+      },
+      "EOD_FLATTEN": {
+        "trades": 126,
+        "wins": 92,
+        "win_rate": 0.7302,
+        "af_usd": 9692.89
+      },
+      "STOP": {
+        "trades": 251,
+        "wins": 0,
+        "win_rate": 0.0,
+        "af_usd": -38321.87
+      },
+      "TARGET": {
+        "trades": 120,
+        "wins": 120,
+        "win_rate": 1.0,
+        "af_usd": 35267.93
+      }
+    },
+    "entry_time_buckets": [
+      {
+        "bucket": "09:30",
+        "trades": 385,
+        "wins": 156,
+        "win_rate": 0.4052,
+        "af_usd": 2949.45
+      },
+      {
+        "bucket": "10:00",
+        "trades": 98,
+        "wins": 51,
+        "win_rate": 0.5204,
+        "af_usd": 3644.85
+      },
+      {
+        "bucket": "10:30",
+        "trades": 11,
+        "wins": 5,
+        "win_rate": 0.4545,
+        "af_usd": 400.67
+      },
+      {
+        "bucket": "11:00",
+        "trades": 3,
+        "wins": 0,
+        "win_rate": 0.0,
+        "af_usd": -265.28
+      },
+      {
+        "bucket": "11:30",
+        "trades": 1,
+        "wins": 1,
+        "win_rate": 1.0,
+        "af_usd": 73.71
+      }
+    ],
+    "distribution": {
+      "avg_win_usd": 218.24,
+      "avg_loss_usd": -139.23,
+      "largest_win": {
+        "date": "2025-11-14",
+        "af_usd": 297.57
+      },
+      "largest_loss": {
+        "date": "2024-12-05",
+        "af_usd": -162.0
+      },
+      "best_days": [
+        {
+          "date": "2025-11-14",
+          "trades": 1,
+          "af_usd": 297.57
+        },
+        {
+          "date": "2025-03-10",
+          "trades": 1,
+          "af_usd": 297.16
+        },
+        {
+          "date": "2026-02-23",
+          "trades": 1,
+          "af_usd": 297.0
+        },
+        {
+          "date": "2025-04-22",
+          "trades": 1,
+          "af_usd": 296.75
+        },
+        {
+          "date": "2026-06-04",
+          "trades": 1,
+          "af_usd": 296.64
+        }
+      ],
+      "worst_days": [
+        {
+          "date": "2024-12-05",
+          "trades": 1,
+          "af_usd": -162.0
+        },
+        {
+          "date": "2024-12-04",
+          "trades": 1,
+          "af_usd": -160.43
+        },
+        {
+          "date": "2025-02-19",
+          "trades": 1,
+          "af_usd": -160.43
+        },
+        {
+          "date": "2024-10-21",
+          "trades": 1,
+          "af_usd": -160.02
+        },
+        {
+          "date": "2025-06-26",
+          "trades": 1,
+          "af_usd": -158.92
+        }
+      ],
+      "longest_win_streak": 7,
+      "longest_loss_streak": 8,
+      "best_10_days": {
+        "af_usd": 2967.22,
+        "share_of_total_net_pct": 43.6,
+        "share_of_gross_profit_pct": 6.4
+      }
+    },
+    "drawdown": {
+      "basis": "realized after-friction equity, close of each trading day (project convention; no mark-to-market)",
+      "max_drawdown_usd": 1992.55,
+      "peak_date": "2026-03-02",
+      "peak_equity_usd": 8486.91,
+      "trough_date": "2026-07-14",
+      "trough_equity_usd": 6494.36,
+      "recovery_date": null,
+      "trading_days_peak_to_recovery": null,
+      "longest_underwater": {
+        "trading_days": 160,
+        "peak_date": "2026-03-02",
+        "peak_equity_usd": 8486.91,
+        "first_underwater_date": "2026-03-03",
+        "recovery_date": null,
+        "recovered": false
+      },
+      "af_trough_usd": 339.98
+    }
+  },
+  "robustness": {
+    "friction_stress": [
+      {
+        "label": "1x (frozen)",
+        "multiple": 1.0,
+        "friction_per_unit_usd": 0.04,
+        "trades": 498,
+        "wins_gross": 214,
+        "net_usd_after_friction": 6803.4,
+        "halves": {
+          "h1": {
+            "trades": 250,
+            "net_after_friction_usd": 5674.36,
+            "net_r": 45.146
+          },
+          "h2": {
+            "trades": 248,
+            "net_after_friction_usd": 1129.04,
+            "net_r": 12.665
+          }
+        },
+        "trough_after_friction_usd": 339.98,
+        "trough_after_friction_at": "2024-10-21 10:31",
+        "pass": {
+          "a_net_after_friction_positive": true,
+          "b_h2_net_after_friction_positive": true,
+          "c_trough_above_zero": true,
+          "passed": true
+        },
+        "trading_days": 500,
+        "net_usd_gross": 8608.8,
+        "net_r_gross": 57.811,
+        "max_drawdown_usd_gross": 1738.37,
+        "skipped_for_size": 0,
+        "lag_voided": 0,
+        "total_friction_usd": 1805.4
+      },
+      {
+        "label": "2x",
+        "multiple": 2.0,
+        "friction_per_unit_usd": 0.08,
+        "trades": 498,
+        "wins_gross": 214,
+        "net_usd_after_friction": 4998.0,
+        "halves": {
+          "h1": {
+            "trades": 250,
+            "net_after_friction_usd": 4647.12,
+            "net_r": 45.146
+          },
+          "h2": {
+            "trades": 248,
+            "net_after_friction_usd": 350.88,
+            "net_r": 12.665
+          }
+        },
+        "trough_after_friction_usd": 329.82,
+        "trough_after_friction_at": "2024-10-21 10:31",
+        "pass": {
+          "a_net_after_friction_positive": true,
+          "b_h2_net_after_friction_positive": true,
+          "c_trough_above_zero": true,
+          "passed": true
+        },
+        "trading_days": 500,
+        "net_usd_gross": 8608.8,
+        "net_r_gross": 57.811,
+        "max_drawdown_usd_gross": 1738.37,
+        "skipped_for_size": 0,
+        "lag_voided": 0,
+        "total_friction_usd": 3610.8,
+        "trade_log": "results/trades_orb15_spy_poly_fric2x.csv"
+      },
+      {
+        "label": "3x",
+        "multiple": 3.0,
+        "friction_per_unit_usd": 0.12,
+        "trades": 498,
+        "wins_gross": 214,
+        "net_usd_after_friction": 3192.6,
+        "halves": {
+          "h1": {
+            "trades": 250,
+            "net_after_friction_usd": 3619.88,
+            "net_r": 45.146
+          },
+          "h2": {
+            "trades": 248,
+            "net_after_friction_usd": -427.28,
+            "net_r": 12.665
+          }
+        },
+        "trough_after_friction_usd": 319.66,
+        "trough_after_friction_at": "2024-10-21 10:31",
+        "pass": {
+          "a_net_after_friction_positive": true,
+          "b_h2_net_after_friction_positive": false,
+          "c_trough_above_zero": true,
+          "passed": false
+        },
+        "trading_days": 500,
+        "net_usd_gross": 8608.8,
+        "net_r_gross": 57.811,
+        "max_drawdown_usd_gross": 1738.37,
+        "skipped_for_size": 0,
+        "lag_voided": 0,
+        "total_friction_usd": 5416.2,
+        "trade_log": "results/trades_orb15_spy_poly_fric3x.csv"
+      }
+    ],
+    "execution_lag": {
+      "delay_bars": 1,
+      "fill": "next bar's open; signal-time stop/target levels; units re-sized at the fill price; an open already past the stop or target voids the trade",
+      "trades": 498,
+      "wins_gross": 214,
+      "net_usd_after_friction": 6807.14,
+      "halves": {
+        "h1": {
+          "trades": 250,
+          "net_after_friction_usd": 5643.57,
+          "net_r": 44.901
+        },
+        "h2": {
+          "trades": 248,
+          "net_after_friction_usd": 1163.57,
+          "net_r": 12.881
+        }
+      },
+      "trough_after_friction_usd": 339.57,
+      "trough_after_friction_at": "2024-10-21 10:31",
+      "pass": {
+        "a_net_after_friction_positive": true,
+        "b_h2_net_after_friction_positive": true,
+        "c_trough_above_zero": true,
+        "passed": true
+      },
+      "trading_days": 500,
+      "net_usd_gross": 8613.1,
+      "net_r_gross": 57.782,
+      "max_drawdown_usd_gross": 1678.35,
+      "skipped_for_size": 0,
+      "lag_voided": 0,
+      "total_friction_usd": 1805.96,
+      "trade_log": "results/trades_orb15_spy_poly_lag1.csv"
+    },
+    "subperiods": {
+      "buckets": [
+        {
+          "bucket": "2024H2_partial",
+          "window": "2024-10-21..2024-12-31",
+          "trades": 50,
+          "wins": 24,
+          "win_rate": 0.48,
+          "af_usd": 1946.2,
+          "green": true
+        },
+        {
+          "bucket": "2025H1",
+          "window": "2025-01-01..2025-06-30",
+          "trades": 122,
+          "wins": 55,
+          "win_rate": 0.4508,
+          "af_usd": 2914.58,
+          "green": true
+        },
+        {
+          "bucket": "2025H2",
+          "window": "2025-07-01..2025-12-31",
+          "trades": 128,
+          "wins": 50,
+          "win_rate": 0.3906,
+          "af_usd": 1223.57,
+          "green": true
+        },
+        {
+          "bucket": "2026H1",
+          "window": "2026-01-01..2026-06-30",
+          "trades": 122,
+          "wins": 52,
+          "win_rate": 0.4262,
+          "af_usd": 587.86,
+          "green": true
+        },
+        {
+          "bucket": "2026H2_partial",
+          "window": "2026-07-01..2026-10-19",
+          "trades": 76,
+          "wins": 32,
+          "win_rate": 0.4211,
+          "af_usd": 131.19,
+          "green": true
+        }
+      ],
+      "green_count": 5,
+      "bucket_count": 5
+    }
+  }
+}
