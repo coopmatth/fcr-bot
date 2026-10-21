@@ -77,9 +77,17 @@ class Trade:
     risk_distance: float
     exit_time: str = ""
     exit_price: float = 0.0
-    exit_reason: str = ""  # TARGET | STOP | EOD_FLATTEN | DATA_END
+    exit_reason: str = ""  # TARGET | STOP | STOP_BE | EOD_FLATTEN | DATA_END
     pnl_usd: float = 0.0
     r_multiple: float = 0.0
+    # Partial-exit leg (V3 "partials" variant only; zeroes/empty otherwise).
+    # The exit_* fields above then describe the REMAINDER leg, pnl_usd is
+    # the two legs combined, and r_multiple is measured against the trade's
+    # INITIAL risk dollars.
+    partial_units: int = 0
+    partial_exit_time: str = ""
+    partial_exit_price: float = 0.0
+    partial_pnl_usd: float = 0.0
 
     def as_row(self) -> dict:
         return {
@@ -95,6 +103,10 @@ class Trade:
             "contracts": self.units,
             "pnl_usd": round(self.pnl_usd, 2),
             "r_multiple": round(self.r_multiple, 3),
+            "partial_units": self.partial_units,
+            "partial_exit_time": self.partial_exit_time,
+            "partial_exit_price": round(self.partial_exit_price, 4),
+            "partial_pnl_usd": round(self.partial_pnl_usd, 2),
         }
 
 
@@ -112,7 +124,15 @@ class FCREngine:
         self.pending: Optional[dict] = None  # {'direction': ..., 'fvg': FVG}
         self._fc_high: Optional[float] = None
         self._fc_low: Optional[float] = None
+        self._fc_open: Optional[float] = None   # first-candle body (V4 trend)
+        self._fc_close: Optional[float] = None
         self._recent: list[Bar] = []
+        self._day_bars: list[Bar] = []          # all RTH bars today (V1 ATR)
+        # V3 partials bookkeeping (inert unless cfg["partials"] is set).
+        self._partial_done: bool = False
+        self._remaining: int = 0                # units still open
+        self._partial_level: float = 0.0        # +1.5R price
+        self._eff_stop: Optional[float] = None  # stop after any BE move
 
     def start_day(self, date: str) -> None:
         self.date = date
@@ -125,7 +145,14 @@ class FCREngine:
         self.pending = None
         self._fc_high = None
         self._fc_low = None
+        self._fc_open = None
+        self._fc_close = None
         self._recent = []
+        self._day_bars = []
+        self._partial_done = False
+        self._remaining = 0
+        self._partial_level = 0.0
+        self._eff_stop = None
 
     # ------------------------------------------------------------------ API
     def on_bar(self, bar: Bar) -> Optional[Trade]:
@@ -135,10 +162,18 @@ class FCREngine:
         if self.state == DONE:
             return None
 
+        fc_start = self.cfg["first_candle_start"]
+        if t >= fc_start:
+            # RTH bars of the current day, in order (V1's ATR window reads
+            # this list; it is not used for anything else).
+            self._day_bars.append(bar)
+
         if self.state == WAIT_FIRST_CANDLE:
-            fc_start = self.cfg["first_candle_start"]
             fc_end = self.cfg["first_candle_end"]
             if fc_start <= t < fc_end:
+                if self._fc_open is None:
+                    self._fc_open = bar.open
+                self._fc_close = bar.close
                 self._fc_high = bar.high if self._fc_high is None else max(self._fc_high, bar.high)
                 self._fc_low = bar.low if self._fc_low is None else min(self._fc_low, bar.low)
                 return None
@@ -149,6 +184,13 @@ class FCREngine:
             # First candle complete -> levels are set (LEVELS_SET), and this
             # bar is also the first one eligible for break detection.
             self.level_high, self.level_low = self._fc_high, self._fc_low
+            # V2 (fc_filter): the runner precomputes a per-day limit from
+            # PRIOR days' first-candle ranges; a wider first candle today
+            # voids the whole day. Absent key -> filter off (baseline).
+            limit = self.cfg.get("fc_range_limit")
+            if limit is not None and (self._fc_high - self._fc_low) > float(limit):
+                self.state = DONE
+                return None
             self.state = WAIT_BREAK
             self._recent = []
             # fall through and process this bar below
@@ -189,13 +231,60 @@ class FCREngine:
         # The breaking move must actually cross the level: the displacement
         # candle (b1) or the confirming candle (b2) must CLOSE beyond it.
         if fvg.direction == "bullish":
-            if b1.close > self.level_high or b2.close > self.level_high:
-                self.pending = {"direction": "long", "fvg": fvg}
-                self.state = WAIT_RETEST
+            if not (b1.close > self.level_high or b2.close > self.level_high):
+                return
+            direction = "long"
         else:  # bearish
-            if b1.close < self.level_low or b2.close < self.level_low:
-                self.pending = {"direction": "short", "fvg": fvg}
-                self.state = WAIT_RETEST
+            if not (b1.close < self.level_low or b2.close < self.level_low):
+                return
+            direction = "short"
+        # V4 (trend): only setups in the direction of the first candle's
+        # body (close vs open of the 09:30-09:35 candle; equal -> both).
+        if self.cfg.get("trend_filter") and not self._trend_allows(direction):
+            return
+        # V1 (min_fvg): the gap must be at least the configured multiple
+        # (0.5) of ATR(14) over today's RTH bars before the displacement
+        # candle. Fewer than 5 such bars -> the setup is invalid.
+        mult = self.cfg.get("min_fvg_atr_mult")
+        if mult is not None:
+            atr = self._atr_before(b1.ts)
+            if atr is None or (fvg.top - fvg.bottom) < float(mult) * atr:
+                return
+        self.pending = {"direction": direction, "fvg": fvg}
+        self.state = WAIT_RETEST
+
+    def _trend_allows(self, direction: str) -> bool:
+        """V4 gate: first-candle body direction (both allowed if flat)."""
+        if self._fc_open is None or self._fc_close is None:
+            return True
+        if self._fc_close > self._fc_open:
+            return direction == "long"
+        if self._fc_close < self._fc_open:
+            return direction == "short"
+        return True
+
+    def _atr_before(self, ts) -> Optional[float]:
+        """ATR(14) of today's RTH bars strictly before timestamp `ts`.
+
+        True ranges use the previous bar's close (the day's first bar
+        falls back to its own high-low). With fewer than 14 bars the
+        average uses what exists; with fewer than 5 the setup window is
+        too young and None is returned (setup invalid, per the V1 spec).
+        """
+        bars = [b for b in self._day_bars if b.ts < ts]
+        if len(bars) < 5:
+            return None
+        trs: list[float] = []
+        prev_close: Optional[float] = None
+        for b in bars:
+            if prev_close is None:
+                tr = b.high - b.low
+            else:
+                tr = max(b.high - b.low, abs(b.high - prev_close), abs(b.low - prev_close))
+            trs.append(tr)
+            prev_close = b.close
+        window = trs[-14:]
+        return sum(window) / len(window)
 
     def _process_wait_retest(self, bar: Bar, prev_bar: Optional[Bar]) -> None:
         fvg = self.pending["fvg"]
@@ -260,6 +349,15 @@ class FCREngine:
             units=units,
             risk_distance=risk_distance,
         )
+        # V3 bookkeeping: full size open, stop at the entry stop, partial
+        # trigger at +1.5R. (Tracked always; only used when partials on.)
+        self._partial_done = False
+        self._remaining = units
+        self._eff_stop = stop
+        if direction == "long":
+            self._partial_level = entry + 1.5 * risk_distance
+        else:
+            self._partial_level = entry - 1.5 * risk_distance
         self.pending = None
         self.state = IN_TRADE  # one-trade-per-day lock: no path back to WAIT_BREAK
 
@@ -268,6 +366,8 @@ class FCREngine:
         # Flatten at flatten_time, at that bar's open.
         if bar.ts.time() >= self.cfg["flatten_time"]:
             return self._exit(bar.ts, bar.open, "EOD_FLATTEN")
+        if self.cfg.get("partials"):
+            return self._process_in_trade_partials(bar)
         if pos.direction == "long":
             # If a bar touches both stop and target, assume the stop first
             # (conservative).
@@ -282,15 +382,72 @@ class FCREngine:
                 return self._exit(bar.ts, pos.target, "TARGET")
         return None
 
+    def _process_in_trade_partials(self, bar: Bar) -> Optional[Trade]:
+        """V3: at +1.5R bank half (floor) and move the stop to breakeven;
+        the remainder runs to the original +3R target, the moved stop, or
+        the 15:55 flatten (handled by the caller)."""
+        pos = self.position
+        stop = self._eff_stop
+        long = pos.direction == "long"
+        hit_stop = bar.low <= stop if long else bar.high >= stop
+        hit_target = bar.high >= pos.target if long else bar.low <= pos.target
+        if not self._partial_done:
+            # The original stop keeps priority on the trigger bar (same
+            # conservative convention as the baseline stop-vs-target rule):
+            # a bar spanning both the stop and +1.5R is a full stop-out.
+            if hit_stop:
+                return self._exit(bar.ts, stop, "STOP")
+            hit_partial = (
+                bar.high >= self._partial_level if long
+                else bar.low <= self._partial_level
+            )
+            if not hit_partial:
+                return None
+            self._take_partial(bar)
+            # Reaching +3R requires crossing +1.5R first, so if this same
+            # bar also reached the target, the remainder exits there.
+            if self._remaining > 0 and hit_target:
+                return self._exit(bar.ts, pos.target, "TARGET")
+            return None
+        # Remainder phase: stop (possibly at breakeven) first, then target.
+        if hit_stop:
+            reason = "STOP_BE" if stop == pos.entry_price else "STOP"
+            return self._exit(bar.ts, stop, reason)
+        if hit_target:
+            return self._exit(bar.ts, pos.target, "TARGET")
+        return None
+
+    def _take_partial(self, bar: Bar) -> None:
+        """Execute the +1.5R partial leg and move the stop to breakeven."""
+        pos = self.position
+        self._partial_done = True
+        take = pos.units // 2 if pos.units >= 2 else 0
+        if take > 0:
+            price = self._partial_level
+            if pos.direction == "long":
+                leg = (price - pos.entry_price) * take * self._point_value
+            else:
+                leg = (pos.entry_price - price) * take * self._point_value
+            pos.partial_units = take
+            pos.partial_exit_time = bar.ts.strftime("%H:%M")
+            pos.partial_exit_price = price
+            pos.partial_pnl_usd = leg
+            self._remaining = pos.units - take
+        self._eff_stop = pos.entry_price  # breakeven for the remainder
+
     def _exit(self, ts: datetime, price: float, reason: str) -> Trade:
         pos = self.position
         pos.exit_time = ts.strftime("%H:%M")
         pos.exit_price = price
         pos.exit_reason = reason
+        # The exit leg covers only the units still open (all of them,
+        # unless a V3 partial already banked some); R is always measured
+        # against the INITIAL risk dollars.
         if pos.direction == "long":
-            pos.pnl_usd = (price - pos.entry_price) * pos.units * self._point_value
+            leg = (price - pos.entry_price) * self._remaining * self._point_value
         else:
-            pos.pnl_usd = (pos.entry_price - price) * pos.units * self._point_value
+            leg = (pos.entry_price - price) * self._remaining * self._point_value
+        pos.pnl_usd = pos.partial_pnl_usd + leg
         risked = pos.risk_distance * pos.units * self._point_value
         pos.r_multiple = pos.pnl_usd / risked if risked > 0 else 0.0
         self.trades.append(pos)
