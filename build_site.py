@@ -155,6 +155,77 @@ def trade_table(run: dict) -> str:
     return "".join(out)
 
 
+def experiments_section() -> str:
+    """Experiments matrix (run_experiments.py) — 6 variants x 5 symbols.
+
+    Reads results/experiments.json; returns "" when the matrix has not
+    been run so the rest of the dashboard still builds.
+    """
+    path = ROOT / "results" / "experiments.json"
+    if not path.exists():
+        return ""
+    matrix = json.loads(path.read_text())
+    runs = matrix["runs"]
+    pos = [r for r in runs if r["net_usd"] > 0]
+    by_id = {r["id"]: r for r in runs}
+    mgc_pos = sum(
+        1 for r in runs if r["symbol"] == "MGC" and r["net_usd"] > 0
+    )
+    rows_html = []
+    for r in runs:
+        cls = "pos" if r["net_usd"] > 0 else "neg"
+        hl = " style='background:#12241a'" if r["net_usd"] > 0 else ""
+        rows_html.append(
+            f"<tr{hl}>"
+            f"<td>{html.escape(r['label'])}</td>"
+            f"<td>{r['trading_days']}</td><td>{r['trades']}</td>"
+            f"<td>{r['wins']}W / {r['losses']}L</td>"
+            f"<td>{pct(r['win_rate'])}</td>"
+            f"<td class='{cls}'>{signed_money(r['net_usd'])}</td>"
+            f"<td>{r['net_r']:+.2f}R</td>"
+            f"<td>{money(r['ending_equity_usd'])}</td>"
+            f"<td>{money(r['max_drawdown_usd'])}</td>"
+            f"<td>{'—' if r['avg_units'] is None else r['avg_units']}</td>"
+            f"<td>{r['skipped_for_size']}</td></tr>"
+        )
+    best = max(runs, key=lambda r: r["net_usd"])
+    interp = (
+        f"<p><b>Honest reading.</b> {len(pos)} of 30 cells finished positive, and every "
+        f"variant still lost money summed across the five symbols — no adjustment turned "
+        f"the First Candle Rule into a broadly profitable system. The one consistent bright "
+        f"spot is gold (MGC): positive in {mgc_pos} of its 6 cells, including the untouched "
+        f"baseline ({signed_money(by_id['mgc_1m_v0_baseline']['net_usd'])}, "
+        f"{by_id['mgc_1m_v0_baseline']['net_r']:+.2f}R), the single best cell in the matrix. "
+        f"Partials (V3) reliably softened losses — higher win rates, shallower drawdowns — "
+        f"without creating an edge. Min-FVG (V1) backfired on MNQ "
+        f"({signed_money(by_id['mnq_1m_v1_min_fvg']['net_usd'])}): rejecting a setup does not "
+        f"end the day, it just hands the day to a later, worse setup. SPY and MNQ — the "
+        f"video's own market — lost under every variant.</p>"
+        f"<p><b>Small-sample warning.</b> Each cell holds only ~8–23 trades over ~60 days "
+        f"(roughly 13 in a typical run). At that size a few trades' difference flips almost "
+        f"any cell's sign — gold's entire baseline profit is about one extra winning trade — "
+        f"and picking the best of 30 cells is itself a form of overfitting: with 30 tries, "
+        f"chance alone manufactures a few good-looking cells. Nothing here is a validated "
+        f"edge; the gold column is a hypothesis for a longer test, not a result.</p>"
+    )
+    return (
+        "<h2>Experiments — can adjustments make it profitable?</h2>"
+        "<p class='muted'>Same 60-day 1-minute Databento window (2026-08-10 → 2026-10-20; "
+        "SPY → 2026-10-19), same $500 account / $150 risk / ≤5 contracts spec on every cell. "
+        "Futures priced off the full-size contract tape, sized as the micro. Variants: "
+        "V0 baseline · V1 FVG ≥ 0.5×ATR(14) · V2 skip wide-first-candle days · "
+        "V3 bank half at +1.5R + breakeven stop · V4 first-candle-body trend filter · "
+        "V5 all four combined. Full matrix: results/experiments.json; "
+        "per-run trade logs in results/.</p>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Run</th><th>Days</th><th>Trades</th><th>W/L</th><th>Win rate</th>"
+        "<th>Net $</th><th>Net R</th><th>End equity</th><th>Max DD</th>"
+        "<th>Avg size</th><th>Skipped</th>"
+        f"</tr></thead><tbody>{''.join(rows_html)}</tbody></table></div>"
+        f"<div class='panel'>{interp}</div>"
+    )
+
+
 def main() -> int:
     summary = json.loads((ROOT / "results" / "summary.json").read_text())
     runs = {r["id"]: r for r in summary["runs"]}
@@ -259,6 +330,8 @@ def main() -> int:
     <th>Run</th><th>Data</th><th>Bars</th><th>Range</th><th>Days</th><th>Trades</th>
     <th>Win rate</th><th>Net $</th><th>Net R</th><th>End equity</th><th>Max DD</th><th>Skipped</th>
   </tr></thead><tbody>{all_runs_rows}</tbody></table></div>
+
+  {experiments_section()}
 
   <div class="panel">
     <h2 style="margin-top:0">Broker: Tradovate (demo first)</h2>
