@@ -208,7 +208,11 @@ def test_phases_progress_through_the_day():
 # ----------------------------------------------------------------------
 def test_sizing_matches_spec_example_geometry():
     # ORB15_SPEC validation-day geometry: stop distance $0.59 at a
-    # $150 budget -> floor(150 / 0.59) = 254 shares.
+    # $150 budget -> floor(150 / 0.59) = 254 shares. That is the
+    # STRATEGY's decision and the signal event still records it —
+    # but since the 2026-10-21 hardening (audit F5) the runner's
+    # hard cap MAX_SHARES=200 binds before the order, so the order
+    # itself is 200 and a size_capped event records the clipping.
     broker = SimulatedBroker()
     runner, events, _ = make_runner(broker)
     bars = range_bars(hi=100.58, lo=100.00, close=100.29) + [
@@ -219,8 +223,12 @@ def test_sizing_matches_spec_example_geometry():
     signal = [e for e in events if e["type"] == "signal"]
     (signal,) = signal
     assert signal["shares"] == 254
-    assert broker.orders[0]["qty"] == 254
+    assert broker.orders[0]["qty"] == 200
     assert broker.orders[0]["side"] == "buy"
+    capped = [e for e in events if e["type"] == "size_capped"]
+    (capped,) = capped
+    assert capped["spec_shares"] == 254
+    assert capped["capped_shares"] == 200
 
 
 def test_kill_switch_blocks_orders_but_logs_signal():
@@ -294,15 +302,24 @@ def test_restart_with_feed_gap_orphan_flattens_at_1555():
 
 
 def test_reconciliation_halt_unknown_broker_position():
+    # ORPHAN POLICY (hardening F1, 2026-10-21): an account holding
+    # the state file cannot explain is FLATTENED via close_position
+    # (never left riding, never adopted on a guess), logged as
+    # orphan_flattened — and the day still halts for entries.
     broker = SimulatedBroker()
     broker.seed_position(50)  # the account holds SPY; state knows nothing
     runner, events, store = make_runner(broker)
     summary = run(runner, broker, long_target_day())
     assert summary["halted"] is True
-    assert "unknown holding" in summary["halt_reason"]
-    assert broker.orders == []
+    assert "orphan policy" in summary["halt_reason"]
+    assert broker.position_qty("SPY") == 0  # flattened, not left open
+    closes = [o for o in broker.orders if o.get("kind") == "close_position"]
+    assert len(closes) == 1 and closes[0]["qty"] == 50
     assert store.load()["halted"] is True
-    assert "reconciliation_halt" in event_types(events)
+    types = event_types(events)
+    assert "orphan_detected" in types
+    assert "orphan_flattened" in types
+    assert "reconciliation_halt" in types
 
 
 def test_reconciliation_halt_state_position_missing_at_broker():
