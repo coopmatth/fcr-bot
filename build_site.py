@@ -686,6 +686,224 @@ def crosscheck_mes_section() -> str:
     )
 
 
+def polygon_section() -> str:
+    """SPY final verdict — Polygon (SIP) tape (run_polygon_spy.py).
+
+    The four SPY cells re-run on Polygon.io's consolidated tape
+    after the Databento DBEQ.BASIC feed proved to be a sampled,
+    non-reproducible fraction of the market. Reads
+    results/polygon_verdict.json; returns "" when the re-check has
+    not been run so the rest of the dashboard still builds.
+    """
+    path = ROOT / "results" / "polygon_verdict.json"
+    if not path.exists():
+        return ""
+    doc = json.loads(path.read_text())
+    tape = doc["tape_verification"]
+    cells = doc["cells"]
+    pf = doc["portfolio"]
+    pfc = pf["polygon"]["combined"]
+
+    def af_cls(v) -> str:
+        return "pos" if v > 0 else "neg"
+
+    def crit_marks(c) -> str:
+        p = c["pass"]
+        marks = []
+        for key, label in (
+                ("a_net_after_friction_positive", "a"),
+                ("b_h2_net_after_friction_positive", "b"),
+                ("c_trough_above_zero", "c")):
+            marks.append(f"{label} {'✓' if p[key] else '✗'}")
+        return " · ".join(marks)
+
+    vol_rows = []
+    for r in tape["consolidation"]["sample_days"]:
+        p, d = r["polygon"], r["databento"]
+        vol_rows.append(
+            f"<tr><td>{html.escape(r['date'])}</td>"
+            f"<td>{p['day_volume']:,.0f}</td>"
+            f"<td>{p['rth_volume']:,.0f}</td>"
+            f"<td>{d['day_volume']:,.0f}</td>"
+            f"<td><b>{r['polygon_to_databento_day_volume']}×</b></td>"
+            f"</tr>"
+        )
+    det = tape["determinism"]
+    cs = tape["cross_sample"]
+    tape_panel = (
+        "<div class='panel'><h2 style='margin-top:0'>First, is the "
+        "Polygon tape real?</h2>"
+        "<p>Three checks, run before any strategy number was "
+        "trusted:</p>"
+        "<p><b>(1) Consolidated volume.</b> SPY really trades "
+        "40–90M shares a day. The Databento DBEQ.BASIC files sum to "
+        "~2M a day — a sampled fraction of the market, which is why "
+        "two downloads of 'the same' history could disagree. "
+        "Polygon's sums land in the real range:</p>"
+        "<div class='tblwrap'><table><thead><tr><th>Day</th>"
+        "<th>Polygon day volume</th><th>Polygon RTH volume</th>"
+        "<th>Databento day volume</th><th>Ratio</th></tr></thead>"
+        f"<tbody>{''.join(vol_rows)}</tbody></table></div>"
+        f"<p><b>(2) Determinism.</b> An independent re-pull of "
+        f"2026-06-15 → 2026-06-19 returned "
+        f"{det['repull_bars']:,} bars, timestamp-for-timestamp "
+        f"identical to the main pull, with "
+        f"<b>{det['bars_differing_ohlcv']} bars differing</b> in "
+        f"OHLCV. Same request, same tape — the property DBEQ.BASIC "
+        f"lacked.</p>"
+        f"<p><b>(3) How different are the tapes?</b> On "
+        f"{cs['shared_rth_timestamps']:,} shared RTH timestamps, "
+        f"{cs['bars_differing_close_gt_0.001']:,} "
+        f"({cs['share_differing'] * 100:.1f}%) differ in close — "
+        f"but the median difference is only "
+        f"${cs['median_abs_dclose_differing']:.3f} (the two "
+        f"Databento pulls differed by a median $0.11). A sampled "
+        f"feed's 'close' is essentially a random print inside the "
+        f"minute; the SIP close is the actual last trade. "
+        f"Cent-level differences, thousand-dollar consequences "
+        f"below.</p></div>"
+    )
+
+    run_rows = []
+    for vc in cells:
+        c = vc["polygon"]
+        h = c["halves"]
+        v = c["verdict"]
+        vcls = "pos" if v == "PASS" else "neg"
+        run_rows.append(
+            f"<tr><td>{html.escape(c['id'].replace('_spy_poly', ''))}</td>"
+            f"<td>{c['trading_days']}</td><td>{c['trades']}</td>"
+            f"<td>{c['wins']}W / {c['losses']}L</td>"
+            f"<td>{pct(c['win_rate'])}</td>"
+            f"<td class='{af_cls(c['net_usd'])}'>{signed_money(c['net_usd'])}</td>"
+            f"<td>{c['net_r']:+.2f}R</td>"
+            f"<td class='{af_cls(c['net_usd_after_friction'])}'><b>{signed_money(c['net_usd_after_friction'])}</b></td>"
+            f"<td>{money(c['ending_equity_usd_after_friction'])}</td>"
+            f"<td>{money(c['max_drawdown_usd'])}</td>"
+            f"<td class='{af_cls(h['h1']['net_after_friction_usd'])}'>{signed_money(h['h1']['net_after_friction_usd'])}</td>"
+            f"<td class='{af_cls(h['h2']['net_after_friction_usd'])}'>{signed_money(h['h2']['net_after_friction_usd'])}</td>"
+            f"<td class='{af_cls(c['trough_after_friction_usd'])}'>{money(c['trough_after_friction_usd'])}"
+            f"<span class='sub'> {html.escape(str(c['trough_after_friction_at']))}</span></td>"
+            f"<td>{c['skipped_for_size']}</td>"
+            f"<td>{crit_marks(c)}</td>"
+            f"<td class='{vcls}'><b>{v}</b></td></tr>"
+        )
+
+    cmp_rows = []
+    for vc in cells:
+        db, pg = vc["databento_24mo"], vc["polygon"]
+        conf = vc["confirmed"]
+        ccls = "pos" if conf else "neg"
+        cmp_rows.append(
+            f"<tr><td>{html.escape(vc['strategy'])}</td>"
+            f"<td class='{af_cls(db['net_usd_after_friction'])}'>{signed_money(db['net_usd_after_friction'])}</td>"
+            f"<td>{html.escape(db['verdict'])}</td>"
+            f"<td class='{af_cls(pg['net_usd_after_friction'])}'><b>{signed_money(pg['net_usd_after_friction'])}</b></td>"
+            f"<td>{html.escape(pg['verdict'])}</td>"
+            f"<td class='{ccls}'><b>{'CONFIRMED' if conf else 'NOT CONFIRMED'}</b></td></tr>"
+        )
+
+    bottom_lines = {
+        "ib_break": (
+            "<b>IB breakout — NOT CONFIRMED, and this is the "
+            "headline.</b> The validation's one clean survivor "
+            "collapses on the real tape: after-friction falls from "
+            "+$5,119.23 to +$644.31, the first half goes negative "
+            "(−$190.97), and the realized trough is −$1,785.72 "
+            "(2026-04-10) — a real $500 account would have been "
+            "wiped out in the second year. The Databento 'edge' was "
+            "substantially an artifact of the sampled feed."),
+        "fcr_v0": (
+            "<b>FCR V0 — NOT CONFIRMED.</b> Negative after friction "
+            "on both tapes (−$181.55 Databento, −$3,072.80 Polygon); "
+            "on the SIP tape the second half alone loses $5,878.73. "
+            "Dead on SPY under every sample."),
+        "vwap_trend": (
+            "<b>VWAP trend — CONFIRMED.</b> Passes all three frozen "
+            "criteria on the SIP tape (+$999.10 after friction, "
+            "trough +$171.81 — it failed only the trough test on "
+            "Databento, where it was +$4,013.33). Real but more "
+            "modest on the true tape, and thin in the second half "
+            "(+$124.29): an edge, not a fortune."),
+        "orb15": (
+            "<b>ORB-15 — CONFIRMED, the strongest SPY cell.</b> "
+            "Passes on both tapes at similar magnitudes "
+            "(+$6,803.40 Polygon vs +$7,157.36 Databento after "
+            "friction; both halves positive on both). Its earlier "
+            "FLIPPED label came from the small 120-day lab window, "
+            "where both samples straddle zero; over 24 months the "
+            "two tapes agree."),
+    }
+    bottom = "".join(
+        f"<p>{bottom_lines[vc['strategy']]}</p>"
+        for vc in cells if vc["strategy"] in bottom_lines)
+
+    pf_panel = (
+        "<div class='panel'><h2 style='margin-top:0'>SPY portfolio "
+        "on the SIP tape — <span class='neg'>NOT CONFIRMED</span>"
+        "</h2>"
+        f"<p>The same trio (IB breakout + FCR V0 + VWAP trend) in "
+        f"one shared $500 account, $300 open-risk cap: "
+        f"{pfc['trades_taken']} of {pfc['trades_considered']} "
+        f"trades taken ({pfc['trades_skipped_by_cap']} skipped by "
+        f"the cap), combined <b>{signed_money(pfc['net_usd'])}</b> "
+        f"after friction, {pct(pfc['win_rate'])} win rate, trough "
+        f"{money(pfc['trough_usd'])} on "
+        f"{html.escape(str(pfc['trough_at']))}, realized-curve max "
+        f"drawdown {money(pfc['max_drawdown_usd'])}. The Databento "
+        f"portfolio's +$8,150.33 PASS does not survive the real "
+        f"tape: FCR V0 alone drags −$3,072.80 standalone and IB "
+        f"breakout's contribution shrinks to +$644.31. Naive "
+        f"uncapped sum of the components: "
+        f"{signed_money(pfc['naive_uncapped_sum_usd'])}. "
+        f"Realized-P&amp;L curve only (no mark-to-market).</p>"
+        "</div>"
+    )
+
+    return (
+        "<h2>SPY final verdict — Polygon (SIP) tape</h2>"
+        "<p class='muted'>The arbiter run. Every SPY verdict above "
+        "rests on Databento's DBEQ.BASIC feed, which the validation "
+        "proved is a sampled, non-reproducible fraction of the "
+        "market. The four SPY cells were therefore re-run on "
+        "Polygon.io's consolidated (SIP) 1-minute aggregates — "
+        "the tape the trades would actually have printed on — "
+        "over the same 24 months (2024-10-21 → 2026-10-19), with "
+        "the identical frozen spec, the same $0.04/share friction "
+        "and the same pass test: (a) 24-month net-after-friction "
+        "&gt; $0, (b) second half &gt; $0, (c) after-friction "
+        "realized-equity trough &gt; $0. A cell is CONFIRMED only "
+        "if it passes on Polygon AND was positive after friction "
+        "on the Databento 24mo file. Full record: "
+        "results/polygon_verdict.json (harness: run_polygon_spy.py, "
+        "data: fetch_polygon_spy.py).</p>"
+        f"{tape_panel}"
+        "<h3>SPY — full 24 months on the Polygon SIP tape</h3>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Cell</th><th>Days</th><th>Trades</th><th>W/L</th>"
+        "<th>Win rate</th><th>Gross $</th><th>Net R</th>"
+        "<th>After friction</th><th>End equity (AF)</th><th>Max DD</th>"
+        "<th>H1 AF</th><th>H2 AF</th><th>Trough (AF)</th>"
+        "<th>Skipped</th><th>Criteria</th><th>Verdict</th>"
+        f"</tr></thead><tbody>{''.join(run_rows)}</tbody></table></div>"
+        "<h3>Three-sample verdict — Databento vs Polygon</h3>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Strategy</th><th>Databento AF</th><th>Databento verdict</th>"
+        "<th>Polygon AF</th><th>Polygon verdict</th><th>Final call</th>"
+        f"</tr></thead><tbody>{''.join(cmp_rows)}</tbody></table></div>"
+        f"{pf_panel}"
+        "<div class='panel'><h2 style='margin-top:0'>Bottom line "
+        "per strategy</h2>"
+        f"{bottom}"
+        "<p class='muted'>What survives the arbiter: ORB-15 and "
+        "VWAP trend on SPY. What does not: the IB breakout's "
+        "headline number, FCR on SPY, and the trio portfolio built "
+        "from the Databento winners. Costs are still the lab's "
+        "friction model ($0.04/share round trip); no slippage "
+        "beyond it is modeled.</p></div>"
+    )
+
+
 def strategy_lab_section() -> str:
     """Strategy Lab (build_strategy_lab.py + build_portfolio.py).
 
@@ -945,6 +1163,8 @@ def main() -> int:
   {validation24_section()}
 
   {crosscheck_mes_section()}
+
+  {polygon_section()}
 
   <div class="panel">
     <h2 style="margin-top:0">Broker: Tradovate (demo first)</h2>
