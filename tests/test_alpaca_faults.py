@@ -8,6 +8,13 @@ audit findings, not to specify desired behavior:
   suite stays green while the hazard is on the record. If a fix
   lands, these tests are supposed to start failing — that failure
   is the signal to update the audit and rename the test.
+* Tests named ``test_fixed_*`` are flipped ``test_fault_*`` tests:
+  the finding was fixed in the 2026-10-21 hardening pass and the
+  test now asserts the SAFE behavior under the same adversarial
+  conditions. Names keep the finding ID (F1, F2, ...) traceable.
+  Findings F9/F10/F12/F14/F15 were OUT of the hardening scope and
+  their ``test_fault_*`` tests remain as-is — the unsafe behavior
+  they document is still the behavior.
 * Tests named ``test_safe_*`` assert behavior that was audited and
   found correct; they are regression guards for the safe verdicts.
 
@@ -39,8 +46,10 @@ from alpaca.runner import (
     AlpacaBroker,
     EventLog,
     Fill,
+    InstanceLock,
     Orb15Runner,
     OrderError,
+    RunnerPosition,
     SimulatedBroker,
     StateStore,
     priced_bars,
@@ -65,7 +74,7 @@ def range_bars(day=DAY, hi=100.0, lo=99.0, close=99.5):
     return [mkbar(day, 9, 30 + i, close, hi, lo, close) for i in range(15)]
 
 
-def make_runner(broker, enabled=True, store=None):
+def make_runner(broker, enabled=True, store=None, **runner_kwargs):
     events = []
     store = store or StateStore()
     runner = Orb15Runner(
@@ -74,6 +83,7 @@ def make_runner(broker, enabled=True, store=None):
         log=EventLog(sink=events),
         store=store,
         clock=lambda: CLOCK_END,
+        **runner_kwargs,
     )
     return runner, events, store
 
@@ -101,12 +111,14 @@ class GhostFillBroker:
     """The adversary: place_market APPLIES the fill on the account
     and only then fails (HTTP timeout after Alpaca received the
     POST, or the process dying between fill and state save). The
-    runner never learns the order existed."""
+    runner never learns the order existed. close_position works
+    normally — that is the F1 orphan policy's tool."""
 
     def __init__(self, exc):
         self._exc = exc
         self._qty = 0
         self.exit_attempts = 0
+        self.close_calls = 0
 
     def set_price(self, price):  # priced_bars wiring; price is moot
         pass
@@ -121,6 +133,12 @@ class GhostFillBroker:
         self.exit_attempts += 1
         raise AssertionError("no exit should ever be attempted here")
 
+    def close_position(self, symbol):
+        self.close_calls += 1
+        qty = abs(self._qty)
+        self._qty = 0
+        return Fill(price=100.6, qty=qty, order_id="ghost-close-1")
+
 
 @pytest.mark.parametrize(
     "exc",
@@ -130,12 +148,13 @@ class GhostFillBroker:
     ],
     ids=["http_timeout_after_fill", "process_death_after_fill"],
 )
-def test_fault_fill_then_failure_orphans_position_and_halts_forever(exc):
-    """UNSAFE (audit F1): an entry fill the runner never sees leaves
-    a REAL position the state file knows nothing about. Restart
-    reconciliation (correctly) refuses to guess and halts — but the
-    halt never flattens the orphan, and the halted state persists,
-    so the position rides unmanaged until a human intervenes."""
+def test_fixed_F1_orphan_position_is_flattened_and_day_halts(exc):
+    """FIXED (audit F1, hardening 2026-10-21): an entry fill the
+    runner never sees still orphans the position for the rest of
+    THAT run — but at restart, reconciliation's ORPHAN POLICY
+    flattens it via close_position, logs orphan_flattened with the
+    full detail, and halts entries for the day. The position never
+    rides unmanaged into another day."""
     broker = GhostFillBroker(exc)
     runner, events, store = make_runner(broker)
     with pytest.raises(type(exc)):
@@ -144,21 +163,95 @@ def test_fault_fill_then_failure_orphans_position_and_halts_forever(exc):
     assert broker.position_qty("SPY") == 93
     assert store.load()["position"] is None
 
-    # systemd restarts the process: reconciliation halts the day.
+    # systemd restarts the process: reconciliation flattens the
+    # orphan, then halts the day (no entries on a day whose books
+    # were wrong at the open).
     runner2, events2, _ = make_runner(broker, store=store)
     summary2 = run(runner2, broker, long_entry_bars())
     assert summary2["halted"] is True
-    assert "unknown holding" in summary2["halt_reason"]
-    # The halt does NOT flatten the orphan position...
-    assert broker.position_qty("SPY") == 93
-    assert broker.exit_attempts == 0
+    assert "orphan policy" in summary2["halt_reason"]
+    types2 = event_types(events2)
+    assert "orphan_detected" in types2
+    assert "orphan_flattened" in types2
+    flattened = [e for e in events2 if e["type"] == "orphan_flattened"]
+    assert flattened[0]["flattened_qty"] == 93
+    assert flattened[0]["pnl_booked_usd"] == 0.0  # entry fill unknown
+    # The orphan is FLAT — not riding, not compounded.
+    assert broker.position_qty("SPY") == 0
+    assert broker.close_calls == 1
 
-    # ...and the halt is sticky: the next day halts too, position
-    # still open. Only a human clearing the state file ends this.
+    # The halt stays sticky (a human reviews the day), but there
+    # is no position left to mismanage.
     runner3, _, _ = make_runner(broker, store=store)
     summary3 = run(runner3, broker, long_entry_bars(NEXT_DAY), day=NEXT_DAY)
     assert summary3["halted"] is True
-    assert broker.position_qty("SPY") == 93
+    assert broker.position_qty("SPY") == 0
+    assert broker.close_calls == 1  # no repeat flatten
+
+
+class LostResponseClient:
+    """Duck-typed client for the broker-level F1 recovery: the
+    POST raises a transport error AFTER Alpaca accepted the
+    order; the order is findable ONLY by its client_order_id."""
+
+    def __init__(self, refusal=None):
+        self.posts = 0
+        self.lookups = 0
+        self.seen_cid = None
+        self._refusal = refusal
+        self._order = {
+            "id": "ord-lost", "status": "filled",
+            "filled_qty": "93", "filled_avg_price": "100.60",
+        }
+
+    def place_market_order(self, symbol, qty, side, client_order_id=None):
+        self.posts += 1
+        self.seen_cid = client_order_id
+        if self._refusal is not None:
+            raise self._refusal
+        raise AlpacaAPIError("Network error calling Alpaca: timed out")
+
+    def get_order_by_client_order_id(self, client_order_id):
+        self.lookups += 1
+        assert client_order_id == self.seen_cid
+        return dict(self._order)
+
+    def get_order(self, order_id):
+        return dict(self._order)
+
+    def get_position(self, symbol):
+        return {"qty": "93"}
+
+
+def test_fixed_F1_unknown_submission_outcome_recovers_by_client_order_id():
+    """FIXED (audit F1): a submission whose response was LOST is
+    recovered by looking the order up under its deterministic
+    client_order_id — exactly ONE POST ever reaches Alpaca (no
+    duplicate order, no orphan), and the fill is booked."""
+    client = LostResponseClient()
+    broker = AlpacaBroker(client, sleep_fn=lambda s: None)
+    broker.set_client_order_id("orb15-2026-10-21-entry")
+    fill = broker.place_market("SPY", 93, "buy")
+    assert fill.qty == 93
+    assert fill.price == pytest.approx(100.60)
+    assert client.posts == 1     # idempotent: never re-POSTed
+    assert client.lookups == 1   # recovered by lookup instead
+
+
+def test_fixed_F1_definitive_refusal_is_not_looked_up():
+    """FIXED (audit F1): when Alpaca ANSWERS the POST with a
+    refusal (HTTP 403), the outcome is KNOWN — nothing was
+    created — so the broker raises OrderError immediately without
+    a pointless lookup."""
+    client = LostResponseClient(
+        refusal=AlpacaAPIError("insufficient buying power", status=403)
+    )
+    broker = AlpacaBroker(client, sleep_fn=lambda s: None)
+    broker.set_client_order_id("orb15-2026-10-21-entry")
+    with pytest.raises(OrderError):
+        broker.place_market("SPY", 93, "buy")
+    assert client.posts == 1
+    assert client.lookups == 0
 
 
 class ScriptedOrderClient:
@@ -171,8 +264,10 @@ class ScriptedOrderClient:
         self.polls = 0
         self.cancels = []
 
-    def place_market_order(self, symbol, qty, side):
+    def place_market_order(self, symbol, qty, side, client_order_id=None):
         self.placed.append((symbol, qty, side))
+        self.placed_cids = getattr(self, "placed_cids", [])
+        self.placed_cids.append(client_order_id)
         return {"id": "ord-1", "status": "accepted"}
 
     def get_order(self, order_id):
@@ -182,30 +277,30 @@ class ScriptedOrderClient:
     def get_position(self, symbol):
         return self._position
 
-    def cancel_order(self, order_id):  # pragma: no cover - never called
+    def cancel_order(self, order_id):
         self.cancels.append(order_id)
+        return {"id": order_id, "status": "canceled"}
 
 
-def test_fault_partially_filled_status_polls_out_and_order_is_never_canceled():
-    """UNSAFE (audit F2): an order stuck in 'partially_filled' is
-    neither 'filled' nor a final-bad status, so AlpacaBroker polls
-    it to max_polls and raises OrderError — while shares have in
-    fact filled on the account. The codebase has NO cancel-order
-    capability at all, so the live order is left to fill further,
-    unmanaged."""
+def test_fixed_F2_partially_filled_cancels_remainder_and_books_filled():
+    """FIXED (audit F2, hardening 2026-10-21): 'partially_filled'
+    is a LIVE state — the broker keeps polling to its bounded
+    deadline, then CANCELS the unfilled remainder and books
+    exactly the filled quantity. The client now HAS a cancel path.
+    Nothing is left live and unmanaged."""
     stuck = {
         "id": "ord-1", "status": "partially_filled",
         "filled_qty": "40", "filled_avg_price": "100.60",
     }
     client = ScriptedOrderClient([stuck] * 10, position={"qty": "40"})
     broker = AlpacaBroker(client, sleep_fn=lambda s: None, max_polls=5)
-    with pytest.raises(OrderError):
-        broker.place_market("SPY", 93, "buy")
+    fill = broker.place_market("SPY", 93, "buy")
+    assert fill.qty == 40
+    assert fill.price == pytest.approx(100.60)
     assert client.polls == 5
     assert client.placed == [("SPY", 93, "buy")]  # exactly one POST
-    assert client.cancels == []                    # never canceled
-    # Structural fact: the client class offers no cancellation path.
-    assert not hasattr(AlpacaClient, "cancel_order")
+    assert client.cancels == ["ord-1"]            # remainder canceled
+    assert hasattr(AlpacaClient, "cancel_order")
 
 
 class ExitRejectingBroker(SimulatedBroker):
@@ -222,34 +317,78 @@ class ExitRejectingBroker(SimulatedBroker):
         return super().place_market(symbol, qty, side)
 
 
-def test_fault_exit_rejection_at_flatten_crashes_and_retries_only_via_restart():
-    """UNSAFE (audit F3): the end-of-day flatten's order failing
-    propagates as an uncaught exception out of run_day — there is
-    no in-run retry and no alerting, only a process crash. The one
-    retry that ever happens comes from systemd restarting the
-    process and replaying the whole day."""
+def test_fixed_F3_exit_rejection_falls_back_to_close_position():
+    """FIXED (audit F3, hardening 2026-10-21): an exit order's
+    rejection no longer kills the run. The exit path falls back
+    to close_position ONCE and the flatten completes; the failure
+    and the fallback are on the event record."""
     broker = ExitRejectingBroker()
     runner, events, store = make_runner(broker)
     bars = long_entry_bars() + [
         mkbar(DAY, 15, 30, 101.0, 101.2, 100.8, 101.0),
     ]
-    with pytest.raises(OrderError):
-        run(runner, broker, bars)
-    # Position still open on the account AND in persisted state.
+    summary = run(runner, broker, bars)  # no exception escapes
+    assert summary["trades"] == 1
+    assert summary["exit_failures"] == 0
+    assert broker.exit_attempts == 1  # the market order was tried...
+    closes = [o for o in broker.orders if o.get("kind") == "close_position"]
+    assert len(closes) == 1           # ...then close_position worked
+    assert broker.position_qty("SPY") == 0
+    assert store.load()["position"] is None
+    types = event_types(events)
+    assert "exit_order_failed" in types
+    assert "exit_failure_critical" not in types
+    assert "flatten_enforced" in types
+
+
+class TotalExitFailureBroker(SimulatedBroker):
+    """Entries fill; EVERY exit mechanism fails (market orders
+    rejected AND close_position erroring)."""
+
+    def __init__(self):
+        super().__init__()
+        self.exit_attempts = 0
+        self.close_attempts = 0
+
+    def place_market(self, symbol, qty, side):
+        if self._qty != 0:
+            self.exit_attempts += 1
+            raise OrderError("Alpaca order rejected (simulated)")
+        return super().place_market(symbol, qty, side)
+
+    def close_position(self, symbol):
+        self.close_attempts += 1
+        raise OrderError("close_position failed (simulated)")
+
+
+def test_fixed_F3_total_exit_failure_is_critical_logged_and_run_survives():
+    """FIXED (audit F3, contained version): when the market order
+    AND the close_position fallback both fail, the run does NOT
+    crash — it logs exit_failure_critical, keeps the position
+    under management, RETRIES the exit on subsequent bars, and
+    completes the day with the position still in the persisted
+    state (tomorrow's reconciliation owns it from there)."""
+    broker = TotalExitFailureBroker()
+    runner, events, store = make_runner(broker)
+    bars = range_bars() + [
+        mkbar(DAY, 9, 45, 99.8, 100.7, 99.7, 100.6),    # entry 93
+        mkbar(DAY, 9, 47, 100.8, 104.0, 100.5, 103.9),  # target: exit fails
+        mkbar(DAY, 9, 48, 100.8, 101.0, 100.5, 100.9),  # retry fails too
+    ]
+    summary = run(runner, broker, bars)  # returns — never raises
+    types = event_types(events)
+    assert "exit_failure_critical" in types
+    assert "exit_pending_retry" in types
+    # Strategy exit + per-bar retry + end-of-data flatten: the
+    # exit was attempted (and escalated) repeatedly, in-run.
+    assert summary["exit_failures"] >= 2
+    assert broker.exit_attempts >= 2
+    assert broker.close_attempts >= 2
+    assert "flatten_failed_position_carried" in types
+    # Nothing was booked; the position is intact in BOTH ledgers.
+    assert summary["trades"] == 0
     assert broker.position_qty("SPY") == 93
     assert store.load()["position"] is not None
-    assert broker.exit_attempts == 1  # exactly one attempt, no retry
-
-    # Process restart (systemd Restart=on-failure): the day replays,
-    # the position is adopted, the flatten is attempted a second
-    # time — and fails the same way. Nothing escalates; the only
-    # trace is lines in a log file.
-    runner2, events2, _ = make_runner(broker, store=store)
-    with pytest.raises(OrderError):
-        run(runner2, broker, bars)
-    assert broker.exit_attempts == 2
-    assert broker.position_qty("SPY") == 93
-    assert not any("alert" in t for t in event_types(events + events2))
 
 
 def test_safe_partial_entry_fill_books_only_filled_qty():
@@ -297,12 +436,12 @@ class PartialExitBroker(SimulatedBroker):
         return super().place_market(symbol, qty, side)
 
 
-def test_fault_partial_exit_fill_leaves_remainder_unmanaged_until_eod():
-    """UNSAFE (audit F4): after a partial exit fill the runner marks
-    the trade DONE with the strategy, so the remaining 53 shares
-    get NO stop/target management for the rest of the day — even on
-    a bar that smashes through the original stop. They exit only
-    via the end-of-data flatten."""
+def test_fixed_F4_partial_exit_remainder_stays_under_level_management():
+    """FIXED (audit F4, hardening 2026-10-21): after a partial exit
+    fill, the remaining shares stay under stop/target management
+    for the rest of the day. The 10:00 bar that smashes the
+    original stop exits the 53-share remainder THERE — not at the
+    end of the data."""
     broker = PartialExitBroker()
     runner, events, _ = make_runner(broker)
     bars = range_bars() + [
@@ -312,51 +451,93 @@ def test_fault_partial_exit_fill_leaves_remainder_unmanaged_until_eod():
         mkbar(DAY, 15, 30, 95.0, 95.5, 94.5, 95.0),
     ]
     summary = run(runner, broker, bars)
-    # Two exit orders total: the partial 40 at the target bar, then
-    # 53 at end of data. NOTHING was placed on the 10:00 stop bar.
     exits = [o for o in broker.orders if o["side"] == "sell"]
     assert [(o["qty"]) for o in exits] == [40, 53]
-    assert "flatten_enforced" in event_types(events)
-    assert summary["trades"] == 2  # partial + flatten booked as two
+    types = event_types(events)
+    assert "exit_partial_remainder" in types
+    assert "flatten_enforced" not in types  # remainder exited at 10:00
+    closed = [e for e in events if e["type"] == "trade_closed"]
+    assert [c["exit_reason"] for c in closed] == ["TARGET", "STOP"]
+    assert closed[1]["managed_by"] == "runner_remainder_levels"
+    assert summary["trades"] == 2  # two booked exit legs
+    # 40 shares at the target bar's close, 53 at the stop bar's.
+    assert summary["realized_pnl_usd"] == round(
+        40 * (103.9 - 100.6) + 53 * (95.0 - 100.6), 2
+    )
+    assert broker.position_qty("SPY") == 0
 
 
 # ======================================================================
 # 2. Sizing
 # ======================================================================
-def test_fault_sizing_is_uncapped_and_a_rejection_crashes_the_day():
-    """UNSAFE (audit F5): SPY sizing has no cap (SPY_META.max_units
-    is None). On real Polygon tape the worst day (2024-12-05,
-    $0.50 stop distance) requested 300 shares / ~$182k notional —
-    364x the $500 overlay (docs/alpaca_runner_audit.md). Here a
-    300-share request is proven executable, and a buying-power
-    rejection on entry propagates as an uncaught crash."""
+def test_fixed_F5_sizing_is_capped_and_the_clipping_is_logged():
+    """FIXED (audit F5, hardening 2026-10-21): the frozen strategy
+    still computes its uncapped size (SPY_META.max_units stays
+    None — the spec is untouched), but the RUNNER's hard caps
+    (MAX_SHARES=200, MAX_NOTIONAL_USD=$150k) bind before the
+    order. The signal event keeps the spec size (the strategy's
+    decision); the ORDER goes out at the capped size, the trade
+    books at its actual size/risk, and a size_capped event
+    records spec vs actual."""
     assert SPY_META.max_units is None
-    # Geometry for exactly floor(150 / 0.50) = 300 shares.
+    # Geometry for exactly floor(150 / 0.50) = 300 shares — the
+    # worst real-tape shape (2024-12-05 requested ~$182k notional).
     broker = SimulatedBroker()
     runner, events, _ = make_runner(broker)
     bars = range_bars(hi=100.49, lo=100.00, close=100.25) + [
         mkbar(DAY, 9, 45, 100.3, 100.55, 100.2, 100.50),
         mkbar(DAY, 9, 47, 100.8, 104.0, 100.5, 103.9),
     ]
-    run(runner, broker, bars)
+    summary = run(runner, broker, bars)
     signal = [e for e in events if e["type"] == "signal"]
-    assert signal[0]["shares"] == 300
-    assert broker.orders[0]["qty"] == 300  # nothing capped it
+    assert signal[0]["shares"] == 300        # spec decision unchanged
+    assert broker.orders[0]["qty"] == 200    # MAX_SHARES bound it
+    capped = [e for e in events if e["type"] == "size_capped"]
+    (capped,) = capped
+    assert capped["spec_shares"] == 300
+    assert capped["capped_shares"] == 200
+    assert "max_shares" in capped["binding_caps"]
+    assert summary["size_capped"] == 1
+    assert summary["trades"] == 1           # booked at actual size
 
+    # The NOTIONAL cap binds when price x spec shares crosses
+    # $150k first: 166 spec shares at $1,000 = $166k -> 150 out.
+    broker_n = SimulatedBroker()
+    runner_n, events_n, _ = make_runner(broker_n)
+    bars_n = range_bars(hi=999.90, lo=999.10, close=999.50) + [
+        mkbar(DAY, 9, 45, 999.6, 1000.2, 999.4, 1000.00),
+    ]
+    run(runner_n, broker_n, bars_n)
+    signal_n = [e for e in events_n if e["type"] == "signal"]
+    assert signal_n[0]["shares"] == 166  # floor(150 / 0.90)
+    assert broker_n.orders[0]["qty"] == 150  # floor(150000 / 1000)
+    capped_n = [e for e in events_n if e["type"] == "size_capped"]
+    assert capped_n[0]["binding_caps"] == ["max_notional"]
+
+
+def test_fixed_F5_entry_rejection_still_fails_the_day_by_design():
+    """KEPT BEHAVIOR (audit F5 scope note): the caps fix the SIZE,
+    not the entry-failure policy — a buying-power rejection on
+    ENTRY still propagates and fails the day (the task scoped
+    containment to exits). The restart then converts the day to
+    a missed_day via the live-frontier gate: no second attempt,
+    nothing booked on a position that never existed."""
     class BuyingPowerBroker(SimulatedBroker):
         def place_market(self, symbol, qty, side):
             raise AlpacaAPIError(
                 "insufficient buying power", status=403
             )
 
+    bars = range_bars(hi=100.49, lo=100.00, close=100.25) + [
+        mkbar(DAY, 9, 45, 100.3, 100.55, 100.2, 100.50),
+        mkbar(DAY, 9, 47, 100.8, 104.0, 100.5, 103.9),
+    ]
     broker2 = BuyingPowerBroker()
     runner2, _, store2 = make_runner(broker2)
     with pytest.raises(AlpacaAPIError):
         run(runner2, broker2, bars)
     assert store2.load()["position"] is None
 
-    # After the crash, a restart (systemd) converts the day to a
-    # missed_day via the live-frontier gate — no second attempt.
     runner3, events3, _ = make_runner(broker2, store=store2)
     summary3 = runner3.run_day(
         DAY, priced_bars(bars, broker2),
@@ -369,25 +550,66 @@ def test_fault_sizing_is_uncapped_and_a_rejection_crashes_the_day():
 # ======================================================================
 # 3. Market calendar
 # ======================================================================
-def test_early_close_day_flattens_at_end_of_data_not_at_1555():
-    """UNSAFE-by-omission (audit F6): the runner has NO market
-    calendar awareness (AlpacaClient exposes no calendar/clock
-    method and nothing calls one). On a 13:00 early close the
-    strategy's 15:55 flatten bar never exists; the position is
-    saved only by the end-of-data flatten fallback — whose order
-    goes out whenever the feed ends, into a closed market."""
-    assert not hasattr(AlpacaClient, "get_calendar")
-    assert not hasattr(AlpacaClient, "get_clock")
+def test_fixed_F6_early_close_day_uses_the_calendars_flatten_time():
+    """FIXED (audit F6, hardening 2026-10-21): the runner consults
+    the market calendar at day start. On a 13:00 early close the
+    day's flatten time becomes min(15:55, close − 5 min) = 12:55
+    and is on the day-start record — the position no longer
+    depends on the accidental timing of the feed ending; the
+    schedule is known and logged BEFORE the session starts."""
+    assert hasattr(AlpacaClient, "get_calendar")
     broker = SimulatedBroker()
-    runner, events, _ = make_runner(broker)
+    runner, events, _ = make_runner(
+        broker,
+        calendar_fn=lambda day: {"open": time(9, 30), "close": time(13, 0)},
+    )
     bars = long_entry_bars() + [
         mkbar(DAY, 12, 59, 101.0, 101.2, 100.8, 101.0),
         mkbar(DAY, 13, 0, 101.0, 101.1, 100.9, 101.0),  # last bar
     ]
     summary = run(runner, broker, bars)
     assert summary["trades"] == 1
-    assert "flatten_enforced" in event_types(events)
     assert broker.position_qty("SPY") == 0
+    (start,) = [e for e in events if e["type"] == "runner_day_start"]
+    assert start["calendar_status"] == "ok"
+    assert start["market_close"] == "13:00"
+    assert start["early_close"] is True
+    assert start["flatten_time"] == "12:55"
+
+
+def test_fixed_F6_non_trading_day_skips_cleanly():
+    """FIXED (audit F6): the calendar says NOT a trading day ->
+    the run is a clean skip: no orders, no strategy, an explicit
+    non_trading_day on the record."""
+    broker = SimulatedBroker()
+    runner, events, _ = make_runner(broker, calendar_fn=lambda day: None)
+    summary = run(runner, broker, long_entry_bars())
+    assert summary["trades"] == 0
+    assert summary["no_trade_reason"] == "non_trading_day"
+    assert summary["halted"] is False
+    assert broker.orders == []
+    assert "non_trading_day" in event_types(events)
+
+
+def test_fixed_F6_calendar_failure_falls_back_loudly():
+    """FIXED (audit F6): if the calendar fetch FAILS, the runner
+    uses the default RTH schedule AND logs calendar_unavailable —
+    the fallback is never silent — and the day trades normally."""
+    def boom(day):
+        raise RuntimeError("calendar endpoint down")
+
+    broker = SimulatedBroker()
+    runner, events, _ = make_runner(broker, calendar_fn=boom)
+    bars = range_bars() + [
+        mkbar(DAY, 9, 45, 99.8, 100.7, 99.7, 100.6),
+        mkbar(DAY, 9, 47, 100.8, 104.0, 100.5, 103.9),
+    ]
+    summary = run(runner, broker, bars)
+    assert summary["trades"] == 1
+    assert "calendar_unavailable" in event_types(events)
+    (start,) = [e for e in events if e["type"] == "runner_day_start"]
+    assert start["calendar_status"] == "unavailable_fallback"
+    assert start["flatten_time"] == "15:55"  # default schedule
 
 
 def test_safe_holiday_with_zero_bars_completes_clean():
@@ -405,30 +627,54 @@ def test_safe_holiday_with_zero_bars_completes_clean():
 # ======================================================================
 # 4. Concurrency & process
 # ======================================================================
-def test_fault_two_runner_instances_trade_the_same_day_twice():
-    """UNSAFE (audit F7): there is no single-instance guard
-    anywhere — no file lock, no PID file, no shared-state check.
-    Two runners over the same account (e.g. the systemd service
-    plus a manual `python -m alpaca.runner` while debugging) each
-    run the full day: the same signal is traded TWICE (2x the
-    intended $150 risk)."""
+def test_fixed_F7_second_instance_is_refused_by_the_lock(tmp_path, monkeypatch):
+    """FIXED (audit F7, hardening 2026-10-21): a non-blocking
+    flock on runner.lock in the state dir is the single-instance
+    guard. A second acquire fails while the first holds it (and
+    succeeds after release) — and main() takes the lock BEFORE
+    any API use, so a duplicate process refuses cleanly (exit 0,
+    refusal logged) instead of double-trading the account."""
+    lock_a = InstanceLock(tmp_path / "runner.lock")
+    lock_b = InstanceLock(tmp_path / "runner.lock")
+    assert lock_a.acquire() is True
+    assert lock_b.acquire() is False  # held -> refused, no waiting
+    lock_a.release()
+    assert lock_b.acquire() is True   # released -> available again
+    lock_b.release()
+
     import alpaca.runner as runner_mod
 
-    source = Path(runner_mod.__file__).read_text()
-    assert "flock" not in source and "O_EXCL" not in source
+    state_dir = tmp_path / "state"
+    holder = InstanceLock(state_dir / "runner.lock")
+    assert holder.acquire() is True
+    built = []
 
-    broker = SimulatedBroker()
-    bars = range_bars() + [
-        mkbar(DAY, 9, 45, 99.8, 100.7, 99.7, 100.6),
-        mkbar(DAY, 9, 47, 100.8, 104.0, 100.5, 103.9),
-    ]
-    runner_a, _, _ = make_runner(broker)
-    run(runner_a, broker, bars)
-    runner_b, _, _ = make_runner(broker)  # second instance, own state
-    run(runner_b, broker, bars)
-    entries = [o for o in broker.orders if o["side"] == "buy"]
-    assert len(entries) == 2
-    assert sum(o["qty"] for o in entries) == 186  # 93 + 93: doubled
+    class FakeClient:
+        def __init__(self, config):
+            built.append("client")
+
+        def verify_paper(self):
+            return {"status": "ACTIVE", "account_number": "PA-TEST"}
+
+    monkeypatch.setattr(runner_mod, "AlpacaClient", FakeClient)
+    monkeypatch.setenv("ALPACA_PAPER_KEY_ID", "PKTEST")
+    monkeypatch.setenv("ALPACA_PAPER_SECRET", "sekret")
+    try:
+        # Lock held by "the service": main() refuses, exit 0,
+        # and never even builds the API client.
+        assert runner_mod.main(["--state-dir", str(state_dir)]) == 0
+        assert built == []
+        refused = (state_dir / "events.jsonl").read_text()
+        assert "runner_lock_refused" in refused
+    finally:
+        holder.release()
+    # Lock free: the same entrypoint proceeds to build the client.
+    monkeypatch.setattr(
+        runner_mod.Orb15Runner, "serve",
+        lambda self, source_factory, **kw: None,
+    )
+    assert runner_mod.main(["--state-dir", str(state_dir)]) == 0
+    assert built == ["client"]
 
 
 def test_safe_statestore_write_is_atomic(tmp_path):
@@ -454,21 +700,47 @@ def test_safe_statestore_write_is_atomic(tmp_path):
     assert store.load() == original
 
 
-def test_fault_corrupt_state_file_crash_loops_forever(tmp_path):
-    """UNSAFE (audit F8): a corrupt state file makes load() raise
-    JSONDecodeError straight out of run_day — uncaught, with no
-    quarantine or recovery path. Under systemd Restart=on-failure
-    this is an infinite 30s crash loop; a position open at the
-    broker during the corruption is unmanaged throughout."""
+def test_fixed_F8_corrupt_state_quarantined_halted_and_reconciled(tmp_path):
+    """FIXED (audit F8, hardening 2026-10-21): a corrupt state file
+    no longer crash-loops the service. run_day quarantines the
+    file (renamed runner_state.corrupt-<ts>, never deleted), logs
+    state_quarantined loudly, and starts HALTED pending
+    reconciliation: a flat account stays halted for review; a
+    HOLDING account goes through the F1 orphan path (flattened,
+    still halted). run_day RETURNS in both cases — no exception,
+    no loop."""
+    # Case 1: flat account.
     path = tmp_path / "runner_state.json"
     path.write_bytes(b'{"date": "2026-10-21", "position": {"dire')
     store = StateStore(path)
     broker = SimulatedBroker()
-    runner, _, _ = make_runner(broker, store=store)
-    with pytest.raises(json.JSONDecodeError):
-        runner.run_day(DAY, [])
-    # The file is untouched: nothing self-heals.
-    assert path.read_bytes().startswith(b'{"date"')
+    runner, events, _ = make_runner(broker, store=store)
+    summary = runner.run_day(DAY, [])  # returns; used to raise
+    assert summary["halted"] is True
+    types = event_types(events)
+    assert "state_quarantined" in types
+    assert "quarantine_reconciled_flat" in types
+    corrupt = list(tmp_path.glob("runner_state.corrupt-*.json"))
+    assert len(corrupt) == 1
+    assert corrupt[0].read_bytes().startswith(b'{"date"')
+    assert store.load()["halted"] is True  # fresh state is valid JSON
+
+    # Case 2: the account is HOLDING when the state corrupts —
+    # the orphan policy flattens it during the halted start.
+    path2 = tmp_path / "s2" / "runner_state.json"
+    path2.parent.mkdir(parents=True)
+    path2.write_bytes(b"garbage{")
+    store2 = StateStore(path2)
+    broker2 = SimulatedBroker()
+    broker2.seed_position(50)
+    broker2.set_price(101.0)
+    runner2, events2, _ = make_runner(broker2, store=store2)
+    summary2 = runner2.run_day(DAY, [])
+    assert summary2["halted"] is True
+    assert broker2.position_qty("SPY") == 0  # flattened, not riding
+    types2 = event_types(events2)
+    assert "state_quarantined" in types2
+    assert "orphan_flattened" in types2
 
 
 # ======================================================================
@@ -535,12 +807,15 @@ def test_fault_feed_gap_in_range_window_silently_distorts_range():
     assert not any("gap" in t for t in event_types(events_gap))
 
 
-def test_fault_feed_exception_mid_position_means_no_flatten_that_run():
-    """UNSAFE (audit F11): exits — including the 15:55 flatten —
-    are decided per arriving bar, and the end-of-data flatten runs
-    only when the bar iterator ENDS NORMALLY. If the feed raises
-    mid-position (data API outage), the exception aborts run_day:
-    no flatten, no exit attempt; the position is simply left."""
+def test_feed_exception_aborts_run_recovery_is_restart_plus_backstop():
+    """KEPT BEHAVIOR within the F11 fix (audit F11, hardening
+    2026-10-21): a feed EXCEPTION still aborts run_day — no
+    flatten is attempted by the dying run itself. That path's
+    recovery is the process restart (systemd) + reconciliation
+    adoption/overnight flatten, unchanged. What the hardening
+    adds is for the OTHER failure shape — the feed that STALLS
+    without raising, where the process lives but bars stop: see
+    the backstop tests below."""
     broker = SimulatedBroker()
     runner, events, store = make_runner(broker)
 
@@ -557,6 +832,80 @@ def test_fault_feed_exception_mid_position_means_no_flatten_that_run():
     types = event_types(events)
     assert "flatten_enforced" not in types
     assert "trade_closed" not in types
+
+
+def _backstop_ready_runner(broker):
+    """A runner frozen mid-run: position open, day context live,
+    flatten time 15:55, last bar processed 15:50."""
+    runner, events, store = make_runner(broker)
+    broker.seed_position(93)
+    broker.set_price(102.0)
+    runner._pos = RunnerPosition(
+        direction="long", qty=93, entry_price=100.6,
+        strategy_entry_price=100.6, entry_time="09:45",
+        stop=99.0, target=103.8, entry_order_id="sim-seed",
+    )
+    runner._current_day = DAY
+    state = {
+        "version": 1, "date": DAY.isoformat(), "phase": "IN_POSITION",
+        "position": runner._pos.to_state(),
+        "overlay_equity_usd": 500.0, "realized_pnl_total_usd": 0.0,
+        "halted": False, "halt_reason": None,
+    }
+    summary = {
+        "date": DAY.isoformat(), "halted": False, "trades": 0,
+        "realized_pnl_usd": 0.0, "realized_pnl_af_model_usd": 0.0,
+        "overlay_equity_usd": 500.0,
+    }
+    runner._day_state = state
+    runner._day_summary = summary
+    runner._flatten_time = time(15, 55)
+    runner._day_flatten_dt = datetime(2026, 10, 21, 15, 55, tzinfo=ET)
+    runner._last_bar_at = datetime(2026, 10, 21, 15, 50, tzinfo=ET)
+    return runner, events, state, summary
+
+
+def test_fixed_F11_backstop_flattens_when_the_feed_stalls():
+    """FIXED (audit F11, contained version): the serve loop's
+    watchdog checks the WALL CLOCK: position open + past the
+    day's flatten time + no bar processed for over 3 minutes ->
+    flatten through the normal exit path and log
+    flatten_backstop_fired. A stalled (not crashed) feed can no
+    longer leave a position riding past the close."""
+    broker = SimulatedBroker()
+    runner, events, state, summary = _backstop_ready_runner(broker)
+    now = datetime(2026, 10, 21, 16, 5, tzinfo=ET)  # 15 min stale
+    assert runner._maybe_backstop_flatten(now) is True
+    assert broker.position_qty("SPY") == 0
+    assert runner._pos is None
+    types = event_types(events)
+    assert "flatten_backstop_fired" in types
+    closed = [e for e in events if e["type"] == "trade_closed"]
+    assert closed[0]["managed_by"] == "wall_clock_backstop"
+    assert closed[0]["exit_reason"] == "EOD_FLATTEN"
+    assert summary["trades"] == 1
+    assert state["overlay_equity_usd"] == round(500 + 93 * (102.0 - 100.6), 2)
+
+
+def test_fixed_F11_backstop_stays_quiet_while_bars_are_fresh():
+    """FIXED (audit F11): the backstop's conditions are conjunct-
+    ive — a fresh bar (<= 3 min) OR a not-yet-reached flatten
+    time means it does NOT fire. It is a backstop, not a second
+    exit engine."""
+    broker = SimulatedBroker()
+    runner, events, state, summary = _backstop_ready_runner(broker)
+    # 1 minute stale, past flatten: too fresh to conclude a stall.
+    runner._last_bar_at = datetime(2026, 10, 21, 15, 57, tzinfo=ET)
+    assert runner._maybe_backstop_flatten(
+        datetime(2026, 10, 21, 15, 58, tzinfo=ET)
+    ) is False
+    # Very stale, but BEFORE the flatten time: not its business.
+    runner._last_bar_at = datetime(2026, 10, 21, 12, 0, tzinfo=ET)
+    assert runner._maybe_backstop_flatten(
+        datetime(2026, 10, 21, 15, 0, tzinfo=ET)
+    ) is False
+    assert broker.position_qty("SPY") == 93
+    assert "flatten_backstop_fired" not in event_types(events)
 
 
 def test_fault_get_bars_pagination_has_no_page_cap():
@@ -685,12 +1034,12 @@ def test_safe_allowed_url_rejects_disguised_hosts():
     ).startswith("https://data")
 
 
-def test_fault_transport_follows_redirects_off_the_locked_host():
-    """UNSAFE (audit F13): urllib_transport does NOT disable
-    redirects (unlike the project's Databento helper, which refuses
-    them). A 302 from the 'locked' host is followed to ANY host,
-    and the APCA credential headers ride along — the per-request
-    assert_allowed_url check covers only the original URL."""
+def test_fixed_F13_transport_refuses_redirects_off_the_locked_host():
+    """FIXED (audit F13, hardening 2026-10-21): urllib_transport
+    now refuses redirects outright (the Databento helper's
+    NoRedirect pattern). A 302 raises AlpacaAPIError and the
+    redirect target is NEVER contacted — the credential headers
+    cannot leave the locked host."""
     hits = {}
 
     class Target(BaseHTTPRequestHandler):
@@ -731,21 +1080,19 @@ def test_fault_transport_follows_redirects_off_the_locked_host():
     for t in threads:
         t.start()
     try:
-        status, _headers, _body = urllib_transport(
-            "GET",
-            f"http://127.0.0.1:{redir_port}/v2/account",
-            {"APCA-API-KEY-ID": "PKTEST",
-             "APCA-API-SECRET-KEY": "sekret"},
-            None,
-        )
+        with pytest.raises(AlpacaAPIError, match="redirect refused"):
+            urllib_transport(
+                "GET",
+                f"http://127.0.0.1:{redir_port}/v2/account",
+                {"APCA-API-KEY-ID": "PKTEST",
+                 "APCA-API-SECRET-KEY": "sekret"},
+                None,
+            )
     finally:
         target.shutdown()
         redirector.shutdown()
-    assert status == 200
-    # The request LANDED on the redirect target — a host the lock
-    # never approved — carrying the credential header with it.
-    assert hits.get("path") == "/stolen"
-    assert hits.get("key_id") == "PKTEST"
+    # The redirect target was never contacted at all.
+    assert hits == {}
 
 
 # ======================================================================
