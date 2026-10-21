@@ -1444,6 +1444,143 @@ def strategy_lab_section() -> str:
     )
 
 
+def orb15_options_modeled_section() -> str:
+    """ORB-15 options — MODELED history (run_orb15_options_modeled.py).
+
+    NOT a backtest on real quotes: we hold no historical options
+    quotes, so every premium is Black-Scholes off the Polygon SIP
+    tape under an assumed IV. Reads results/orb15_options_modeled.json;
+    returns "" when the model has not been run.
+    """
+    path = ROOT / "results" / "orb15_options_modeled.json"
+    if not path.exists():
+        return ""
+    doc = json.loads(path.read_text())
+
+    def cls(v) -> str:
+        return "pos" if v > 0 else "neg"
+
+    def anchor_rows(w: dict) -> str:
+        rows = []
+        sh = w["shares_identical_trades"]
+        rows.append(
+            "<tr><td><b>Shares (identical trades)</b></td>"
+            f"<td>{sh['trades']}</td><td>—</td>"
+            f"<td>{sh['win_rate']:.1%}</td>"
+            f"<td class='{cls(sh['net_pnl_after_friction_usd'])}'>"
+            f"{signed_money(sh['net_pnl_after_friction_usd'])}</td>"
+            f"<td>{money(sh['ending_equity_usd'])}</td>"
+            f"<td>{money(sh['trough_usd'])}</td>"
+            f"<td>{money(sh['max_drawdown_usd'])}</td>"
+            f"<td>{signed_money(sh['avg_win_usd'])}</td>"
+            f"<td>{signed_money(sh['avg_loss_usd'])}</td></tr>")
+        labels = {
+            "realized": "(a) Realized IV ×1.00",
+            "realized_low": "(b) Realized IV ×0.85",
+            "realized_high": "(c) Realized IV ×1.20",
+            "realized_wide_spread": "(a) + wide spread ($0.05 RT)",
+            "vix": "(d) VIX close",
+        }
+        for key, label in labels.items():
+            a = w["anchors"].get(key)
+            if a is None:
+                continue
+            rows.append(
+                f"<tr><td>{label}</td><td>{a['trades_taken']}</td>"
+                f"<td>{a['gate_skipped']}</td>"
+                f"<td>{a['win_rate']:.1%}</td>"
+                f"<td class='{cls(a['net_pnl_usd'])}'>"
+                f"{signed_money(a['net_pnl_usd'])}</td>"
+                f"<td>{money(a['ending_overlay_usd'])}</td>"
+                f"<td>{money(a['trough_usd'])}</td>"
+                f"<td>{money(a['max_drawdown_usd'])}</td>"
+                f"<td>{signed_money(a['avg_win_usd'])}</td>"
+                f"<td>{signed_money(a['avg_loss_usd'])}</td></tr>")
+        return "".join(rows)
+
+    def window_block(title: str, w: dict, dd: dict) -> str:
+        return (
+            f"<h3>{title}</h3>"
+            "<div class='tblwrap'><table><thead><tr>"
+            "<th>Expression / IV anchor</th><th>Trades taken</th>"
+            "<th>Gate-skipped</th><th>Win rate</th><th>Net P&amp;L</th>"
+            "<th>End overlay</th><th>Trough</th><th>Max DD</th>"
+            "<th>Avg win</th><th>Avg loss</th></tr></thead>"
+            f"<tbody>{anchor_rows(w)}</tbody></table></div>"
+            f"<p class='muted'>Decay diagnostic (anchor a): of the "
+            f"trades that WON in shares, "
+            f"<b>{dd['shares_winners_that_lost_in_options']} of "
+            f"{dd['shares_winners']}</b> LOST in options (theta/delta "
+            f"ate the move); of the shares losers, "
+            f"{dd['shares_losers_that_won_in_options']} of "
+            f"{dd['shares_losers']} won in options.</p>")
+
+    full = doc["windows"]["full_24mo"]
+    last = doc["windows"]["last_120d"]
+    gt = doc["ground_truth_check"]
+    gt_rows = "".join(
+        f"<tr><td>{html.escape(k)}</td><td>{v['sigma']:.3f}</td>"
+        f"<td>{money(v['mid'])}</td><td>{money(v['ask'])}</td></tr>"
+        for k, v in gt["modeled"].items())
+    s1 = doc["sanity"]["entry_ask_distribution_anchor_a_full"]
+    return (
+        "<h2>ORB-15 options — MODELED history (not real quotes)</h2>"
+        "<p class='muted'><b>This is a model, not a backtest.</b> "
+        "We hold no historical SPY options quotes, so each of the "
+        "498 frozen ORB-15 trades was re-priced as the options "
+        "variant would trade it (same-day expiry, nearest $1 "
+        "strike, 1 contract, $2.50 premium gate) using "
+        "Black-Scholes off the Polygon SIP tape. The dominant "
+        "error is the volatility input: real 0DTE implied vol on a "
+        "breakout day is not trailing realized vol, and the error "
+        "concentrates exactly where these trades live. Read the "
+        "BAND across the IV anchors — never a single number. "
+        "Full record: results/orb15_options_modeled.json "
+        "(harness: run_orb15_options_modeled.py).</p>"
+        + window_block(
+            "Full 24 months (2024-10-21 → 2026-10-19)", full,
+            full["decay_diagnostic_anchor_a"])
+        + window_block(
+            "Last 120 trading days (2026-04-29 → 2026-10-19)", last,
+            last["decay_diagnostic_anchor_a"])
+        + "<div class='panel'><h2 style='margin-top:0'>Ground-truth "
+          "check — one real quote</h2>"
+          "<p class='muted'>The single real options quote we hold: "
+          "2026-10-21 ~15:44 ET, SPY 773.07, today's-expiry 773 "
+          "call, ~16 minutes to expiry — actual ask <b>$0.84</b> "
+          "(from the Alpaca paper smoke check). What the model "
+          "says that contract was worth:</p>"
+          "<div class='tblwrap'><table><thead><tr><th>Anchor</th>"
+          "<th>Sigma</th><th>Modeled mid</th><th>Modeled ask</th>"
+          f"</tr></thead><tbody>{gt_rows}</tbody></table></div>"
+          "<p class='muted'>The realized-vol anchors UNDERPRICE "
+          "the real contract by roughly half at that moment — the "
+          "market was charging an IV the trailing realized vol "
+          "does not see. The VIX anchor lands closest here. "
+          "Direction of bias matters: anchor (a) is likely "
+          "OPTIMISTIC on entry cost near expiry, though entries "
+          "happen in the morning with 4+ hours left. Modeled "
+          "entry-ask distribution (anchor a, full window): median "
+          f"${s1['median']}, p10 ${s1['p10']}, p90 ${s1['p90']} — "
+          "inside the plausible $1–$3.50 band.</p></div>"
+          "<div class='panel'><h2 style='margin-top:0'>Bottom "
+          "line</h2><p>Modeled premiums are estimates whose error "
+          "concentrates exactly where 0DTE trades live (minutes "
+          "to expiry, breakout-day IV). Even so, the band is "
+          "informative: over 24 months the options expression "
+          "keeps only a fraction of the shares result at the "
+          "central anchor and goes negative at the high-IV edge, "
+          "and in the last 120 trading days EVERY anchor is "
+          "negative — the same decay the shares curve shows, "
+          "amplified by theta. If the band ever justifies it, "
+          "real quotes can be purchased later (Databento OPRA / "
+          "Polygon options) and this model replaced with fact. "
+          "Until then, the Alpaca options paper forward test — "
+          "real quotes, real fills — remains the arbiter.</p>"
+          "</div>"
+    )
+
+
 def main() -> int:
     summary = json.loads((ROOT / "results" / "summary.json").read_text())
     runs = {r["id"]: r for r in summary["runs"]}
@@ -1564,6 +1701,8 @@ def main() -> int:
   {orb15_deepdive_section()}
 
   {orb15_mes_section()}
+
+  {orb15_options_modeled_section()}
 
   <div class="panel">
     <h2 style="margin-top:0">Broker: Tradovate (demo first)</h2>
