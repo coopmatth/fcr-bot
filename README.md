@@ -105,14 +105,27 @@ a partial session at fetch time.
 
 ## Broker: Tradovate (demo first)
 
-Matt's pick. Key facts (verified 2026-10-21 — sources in the
-dashboard/README notes of the research run): official REST + WebSocket
-API with a simulation environment (`https://demo.tradovateapi.com/v1`);
-MNQ **day margin $100/contract** (Tradovate's own margin page; initial
-margin $4,658.74); API Access is a **$25/month add-on** that requires a
-live funded account with at least **$1,000**; micro commissions on the
-free plan are **$0.39/contract/side** plus exchange/clearing/NFA fees
-(all-in ≈ $0.95/side on MNQ per Tradovate's rate sheet math).
+Matt's pick. Key facts (verified 2026-10-21 against Tradovate/NinjaTrader's
+own pages unless noted): official REST + WebSocket API with a simulation
+environment (`https://demo.tradovateapi.com/v1` — the docs' examples all use
+the demo host; the auth response also returns per-organization `apiHosts`,
+which the client should treat as authoritative); MNQ **day margin
+$100/contract** (Tradovate's own margin page; initial margin $4,658.74);
+API Access is a **$25/month add-on** that requires a live funded account
+with at least **$1,000** (prop/evaluation accounts are not eligible);
+micro commissions on the free plan are **$0.39/contract/side** plus
+exchange/clearing/NFA fees (all-in ≈ $0.95/side on MNQ — third-party
+estimate; Tradovate's own all-in rate PDF was unreachable, 404, on
+2026-10-21, so confirm in-account before relying on it).
+
+**Market-data caveat (important):** the API Access add-on provides order
+placement and account data — it does **not** include real-time market
+data. Tradovate's docs route real-time/historical market-data API access
+through becoming a CME sub-vendor and signing the CME Information License
+Agreement. In the demo environment, simulated data is available for
+development; a live deployment needs a separate data arrangement (or a
+different data source feeding the same engine). The engine doesn't care
+where bars come from — only the adapter does.
 
 Integration status: the `tradovate/` package is **built and
 unit-tested with mocked transports** (auth flow, token caching/renewal,
