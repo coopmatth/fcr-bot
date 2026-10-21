@@ -782,6 +782,27 @@ contained and loudly logged, but they still terminate in the
 event log, so the service gets a daily health check during the
 forward test.
 
+**Options variant paper test (deployed 2026-10-21; scored start
+Thu 2026-10-22).** A second runner expresses the same frozen
+ORB-15 signals in SPY options instead of shares, per
+`ORB15_OPTIONS_SPEC.md`: a long breakout buys the nearest-expiry
+at-the-money **call**, a short breakout buys the **put** (long
+options only — premium paid is the maximum loss), exactly **1
+contract**, and a **premium gate** skips the day when the
+snapshot ask exceeds **$2.50/share ($250/contract)** (or the
+snapshot is missing/stale). Exits are driven by the same
+underlying stop/target levels or the 15:55 flatten, and fills
+book to the variant's **own $500 overlay ledger** in
+`alpaca_options_state/` — separate from the shares runner's
+books. It runs as `orb15-options-paper.service` on the same box
+against the same paper account and shares the shares runner's
+hardened plumbing (paper host lock, live-frontier gate,
+reconciliation, single-instance lock). **Unvalidated by
+design:** no options backtest exists — theta decay and delta
+reshape the payoff versus the shares expression — so this
+forward test is the variant's first measurement, not a
+confirmation of the shares or MES results.
+
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
 Execution model: entries fill at the engulfing bar's close; exits at
