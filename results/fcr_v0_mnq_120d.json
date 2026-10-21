@@ -1,0 +1,33 @@
+{
+  "id": "fcr_v0_mnq_120d",
+  "label": "MNQ 1m \u00b7 FCR V0 baseline",
+  "strategy": "fcr_v0",
+  "strategy_label": "First Candle Rule V0 baseline (reference)",
+  "symbol": "MNQ",
+  "symbol_key": "mnq",
+  "data_file": "data/mnq_1m_120d.csv",
+  "data_symbol": "MNQ.v.0 (GLBX.MDP3)",
+  "instrument_type": "futures",
+  "point_value_usd": 2.0,
+  "friction_per_unit_usd": 3.4,
+  "window": {
+    "start": "2026-06-22",
+    "end": "2026-10-20"
+  },
+  "trading_days": 87,
+  "trades": 28,
+  "wins": 6,
+  "losses": 22,
+  "win_rate": 0.2143,
+  "net_usd": -239.0,
+  "net_r": -4.0,
+  "starting_balance_usd": 500.0,
+  "ending_equity_usd": 261.0,
+  "max_drawdown_usd": 1153.0,
+  "avg_units": 2.61,
+  "skipped_for_size": 2,
+  "total_friction_usd": 248.2,
+  "net_usd_after_friction": -487.2,
+  "ending_equity_usd_after_friction": 12.8,
+  "trade_log": "results/trades_fcr_v0_mnq_120d.csv"
+}
