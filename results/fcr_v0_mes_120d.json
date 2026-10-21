@@ -1,0 +1,33 @@
+{
+  "id": "fcr_v0_mes_120d",
+  "label": "MES 1m \u00b7 FCR V0 baseline",
+  "strategy": "fcr_v0",
+  "strategy_label": "First Candle Rule V0 baseline (reference)",
+  "symbol": "MES",
+  "symbol_key": "mes",
+  "data_file": "data/es_1m_120d.csv",
+  "data_symbol": "ES.v.0 tape (GLBX.MDP3)",
+  "instrument_type": "futures",
+  "point_value_usd": 5.0,
+  "friction_per_unit_usd": 4.9,
+  "window": {
+    "start": "2026-06-22",
+    "end": "2026-10-20"
+  },
+  "trading_days": 87,
+  "trades": 40,
+  "wins": 9,
+  "losses": 31,
+  "win_rate": 0.225,
+  "net_usd": -125.0,
+  "net_r": -4.0,
+  "starting_balance_usd": 500.0,
+  "ending_equity_usd": 375.0,
+  "max_drawdown_usd": 1515.0,
+  "avg_units": 4.58,
+  "skipped_for_size": 0,
+  "total_friction_usd": 896.7,
+  "net_usd_after_friction": -1021.7,
+  "ending_equity_usd_after_friction": -521.7,
+  "trade_log": "results/trades_fcr_v0_mes_120d.csv"
+}
