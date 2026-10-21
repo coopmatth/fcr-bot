@@ -1,0 +1,26 @@
+# First Candle Rule (FCR) — paper-only strategy configuration
+#
+# Primary instrument: MNQ (micro E-mini Nasdaq-100 futures).
+# The sizing block below is instrument-aware: set instrument_type,
+# point_value_usd, risk_budget_usd and max_contracts for the instrument.
+# For an equity like SPY use instrument_type: equity, point_value_usd: 1.0,
+# risk_budget_usd as the dollar risk, and omit max_contracts (uncapped).
+symbol: MNQ
+data_symbol: "MNQ=F"          # Yahoo Finance symbol used by the backtester
+timezone: America/New_York
+
+# Instrument / sizing
+instrument_type: futures        # 'futures' (contracts) or 'equity' (shares)
+point_value_usd: 2.0            # $ per 1.00 index point per contract (MNQ = $2/pt)
+risk_budget_usd: 150            # max dollars risked per trade
+max_contracts: 5                # hard cap on contracts per trade
+starting_balance_usd: 500       # paper account starting equity
+
+# Risk / reward
+rr_target: 3.0                  # fixed reward:risk multiple (target = 3x risk distance)
+
+# Session structure (America/New_York, regular session only)
+first_candle_start: "09:30"   # first 5-minute candle opens
+first_candle_end: "09:35"     # first 5-minute candle completes; its high/low become the day's levels
+entry_cutoff: "12:00"         # no new entries at/after this time
+flatten_time: "15:55"         # any open position is flattened at this time
