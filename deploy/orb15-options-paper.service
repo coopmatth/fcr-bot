@@ -1,0 +1,41 @@
+[Unit]
+Description=ORB-15 OPTIONS variant forward test on the Alpaca PAPER account (SPY options, paper only)
+Documentation=file:/home/discord/fcr-bot/ORB15_OPTIONS_SPEC.md
+After=network-online.target
+Wants=network-online.target
+
+# =====================================================================
+# STATUS: WRITTEN 2026-10-21, **NOT INSTALLED** — do not install or
+# enable until the options variant has been separately reviewed and
+# its smoke check (chain fetch + ATM selection + snapshot gate
+# against the real paper API) has been read. The shares runner's
+# forward test (orb15-alpaca-paper.service) owns the box meanwhile.
+#
+# WARNING — SHARED KILL SWITCH: this unit reads the SAME env file as
+# the shares runner, including ALPACA_RUNNER_ENABLED. If that flag is
+# true when this service starts, the options runner will place paper
+# orders on the first live signal — there is no separate observe-only
+# grace period unless the flag is false at start. Installing this
+# unit is therefore a deliberate arming step, not a passive one.
+# =====================================================================
+
+[Service]
+Type=simple
+User=discord
+WorkingDirectory=/home/discord/fcr-bot
+# Same credentials + kill-switch file as the shares runner (chmod
+# 600, never in the repo): ALPACA_PAPER_KEY_ID / ALPACA_PAPER_SECRET
+# / ALPACA_RUNNER_ENABLED. The options runner's OWN state lives in
+# alpaca_options_state/ (never shared with the shares runner).
+EnvironmentFile=/home/discord/fcr-bot/.env.alpaca
+Environment=ALPACA_OPTIONS_STATE_DIR=/home/discord/fcr-bot/alpaca_options_state
+ExecStart=/home/discord/fcr-bot/.venv/bin/python -m alpaca.options_runner
+# A reconciliation HALT exits with code 3 on purpose: do not restart
+# a halted runner automatically — a human clears the state file
+# after looking. Ordinary crashes/failures restart after 30s.
+Restart=on-failure
+RestartSec=30
+SuccessExitStatus=3
+
+[Install]
+WantedBy=multi-user.target
