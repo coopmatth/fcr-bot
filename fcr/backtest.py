@@ -47,13 +47,22 @@ def max_drawdown_usd(equity_curve: list[dict]) -> float:
 
 
 def run_backtest(
-    df: pd.DataFrame, cfg: dict, starting_balance: float | None = None
+    df: pd.DataFrame,
+    cfg: dict,
+    starting_balance: float | None = None,
+    cfg_for_day=None,
 ) -> tuple[list[dict], int, dict]:
     """Run the engine over all days in df.
 
     Returns (trade rows, trading days run, meta) where meta carries the
     skipped-for-size count and, when a starting balance is known, the
     day-by-day equity curve, ending equity and max drawdown.
+
+    cfg_for_day, when given, is a callable (date_iso, base_cfg) -> cfg
+    invoked once per trading day; its result configures that day's
+    engine. The V2 first-candle filter uses it to inject the per-day
+    fc_range_limit computed from prior days. Default None: one config
+    for every day (the historical behavior).
     """
     if starting_balance is None:
         starting_balance = cfg.get("starting_balance_usd")
@@ -74,7 +83,8 @@ def run_backtest(
         if session.empty:
             continue
         days += 1
-        engine = FCREngine(cfg)
+        day_cfg = cfg_for_day(date.isoformat(), cfg) if cfg_for_day else cfg
+        engine = FCREngine(day_cfg)
         engine.start_day(date.isoformat())
         last_bar = None
         for ts, o, h, l, c, v in zip(
