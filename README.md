@@ -567,6 +567,107 @@ are 5/5 green (2024H2-partial +$1,946.20 · 2025H1 +$2,914.58 ·
 but decaying — each of the last three buckets is smaller than
 the one before. Confirmed is not the same as strengthening.
 
+## ORB-15 Alpaca paper forward test (deployed 2026-10-21; scored start Thu 2026-10-22)
+
+The forward-test runner for the frozen ORB-15 spec lives in the
+`alpaca/` package and is **deployed and armed**: it runs on the
+Linux box as `orb15-alpaca-paper.service` against the Alpaca
+**paper** account (keys in the box's `/home/discord/fcr-bot/.env.alpaca`,
+`chmod 600`, never in the repo), with `ALPACA_RUNNER_ENABLED=true`
+since 2026-10-21. Everything is covered by mocked tests (140,
+including the live-frontier gate tests below) plus a dry-run
+replay.
+
+**How it works.** Decisions come from the very `ORBStrategy` class
+the backtest ran (same code, not a port), fed with completed
+1-minute bars. On a signal the runner places a market order on the
+Alpaca **paper** account and books the *actual* fill; exits are
+runner-managed on the strategy's decision bars (stop/target/15:55
+flatten, stop wins ties) and also filled at market. The paper
+account's $100k is fill machinery only — the runner keeps its own
+$500 overlay books from realized fills, sized by the frozen
+$150-risk spec, and reports each trade's pnl both raw and net of
+the backtest's $0.04/share friction model.
+
+**Safety, hard-enforced.** The trading host is locked to
+`https://paper-api.alpaca.markets` in code (any other host raises,
+at config time and again per-request); a key ID not starting with
+Alpaca's paper prefix `PK` is refused; orders place only when
+`ALPACA_RUNNER_ENABLED` is explicitly true (default: observe-only —
+signals are logged, nothing is ordered). Every event lands in a
+JSONL log, state persists after every transition, and on restart
+the runner reconciles its state against the account's actual SPY
+position: any disagreement it cannot fully explain halts it (no
+orders) rather than guessing. A matched position is adopted and
+managed to the 15:55 flatten even if the bar feed has a gap.
+
+**FEED NOTE — the caveat that defines what this test measures.**
+Live signals come from Alpaca's **free IEX real-time feed** —
+IEX only, roughly 3% of consolidated volume — while the
+validating backtest used Polygon **SIP** (consolidated) bars.
+IEX bars can differ from SIP bars in highs, lows and closes, so
+ranges and breakout triggers may differ day to day. The forward
+test therefore measures ORB-15 *as it is deployable for free*,
+feed divergence included; if it disappoints, the feed is a named
+suspect. The bar source is an injectable interface (`BarSource`)
+so a Polygon-SIP source can replace the IEX source later without
+touching strategy or runner logic.
+
+**Proof the runner is the frozen strategy.** `run_orb15_alpaca_replay.py`
+drives the runner over 25 Polygon-tape days (first 20 trading days
++ the 5 biggest-|pnl| days) through a fill-at-market simulated
+broker and compares decisions with the backtest log
+(`results/orb15_alpaca_replay.json`): **125/125 decision fields
+match (100%)** — trade day, entry time, direction, shares, exit
+reason. Exit *prices* differ by construction (backtest fills at
+the exact level / 15:55 open; the runner fills at the deciding
+bar's close): observed deltas −$0.54…+$0.29 per share-price unit
+on the sampled days. Live fills will differ by real slippage —
+that is the quantity the forward test exists to measure.
+
+**Deploy-day artifact (2026-10-21) — the catch-up bug, its fix,
+and the scoring ruling.** The service was first started at
+14:32 ET on 2026-10-21, mid-session. On a fresh start the runner
+backfills the day's bars and replays them through the strategy to
+rebuild state — and the un-gated runner then *executed* the
+replayed decisions with live paper market orders at current
+prices: the morning's 09:47 long signal (strategy entry 771.25,
+stop 769.755, target 774.24, 100 sh) was bought at the 14:32
+market price (774.27) and immediately closed as a STOP at
+774.25, booking **−$2.00** to the overlay. The strategy's true
+replayed outcome for that trade (−$149.50 gross, −$153.50 net of
+the friction model) was not booked; two live fills 2¢ apart were
+booked instead. The CSV replay tests could not catch this — the
+simulated broker fills at bar closes, so replayed executions look
+identical to live ones there.
+
+**The fix — a live-frontier gate.** `serve()` hands each day run
+a `live_since` frontier (the moment the runner began consuming
+the day live). Bars already complete at the frontier are
+start-of-day catch-up: the strategy still replays them, but their
+signals are history and can never place an order — the check
+lives in the entry placement itself (`_place_entry_order`), so
+no code path can bypass it. A day whose entry fired during
+catch-up resolves as a **`missed_day`**: the replayed outcome is
+logged for the record (closed-in-replay, or still-open-at-frontier
+marked at the last catch-up close), **nothing is booked**, and the
+runner never enters late. Exits are never gated — a position
+adopted at restart is real and is managed/flattened normally
+(the restart reconciliation path is unchanged). A pre-session
+start is unaffected (catch-up is empty). The catch-up mode is
+explicit in the persisted state (`live_since`, `catchup_bars`,
+`missed_day`). New tests cover a resolved mid-day start, a
+still-open-at-frontier start, a live-bar signal after a mid-day
+start, a pre-open start, restart adoption under the gate, and
+the placement-level refusal.
+
+**Ruling.** 2026-10-21 is a **deploy-day artifact and is
+excluded from forward-test scoring** (annotated in the box's
+`alpaca_state/events.jsonl` as a `deploy_day_artifact` event; the
+original events are kept). The overlay accounting was reset by
+an explicit, recorded state adjustment, so **the scored forward
+test starts Thu 2026-10-22 at exactly $500.00**.
+
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
 Execution model: entries fill at the engulfing bar's close; exits at
@@ -779,6 +880,17 @@ tradovate/             DEMO-only Tradovate API layer (kill-switched)
   client.py            REST auth (token request/cache/renewal)
   market_data.py       front-month lookup + 1m chart bars -> engine Bars
   execution.py         bracket (OSO) entries, status reads, flatten
+alpaca/                PAPER-only Alpaca layer for the ORB-15 forward test
+  config.py            env-var credentials, paper host lock, kill switch
+  client.py            PAPER trading REST (account/orders/positions)
+                       + data REST (SPY 1m bars, free IEX feed)
+  runner.py            ORB-15 forward-test engine: the frozen
+                       ORBStrategy decides, the runner fills at
+                       market, persists events/state, reconciles
+                       on restart, enforces the 15:55 flatten
+run_orb15_alpaca_replay.py  runner-vs-backtest proof (25 Polygon days)
+deploy/                orb15-alpaca-paper.service + install runbook
+                       (deployed on the Linux box 2026-10-21)
 run_backtest.py        single-run CLI entry point
 run_matrix.py          the 4-run Yahoo matrix -> results/summary.json
 run_experiments.py     6-variant x 5-symbol matrix -> results/experiments.json
@@ -793,7 +905,9 @@ run_orb15_deepdive.py  ORB-15 diagnostics + robustness -> results/orb15_deepdive
 build_site.py          regenerates site/index.html from results/
 site/index.html        static dashboard (deployed to Vercel)
 tests/                 test_fcr.py (engine/sizing/equity), test_tradovate.py,
-                       test_variants.py, test_gold_bot.py (gold runner)
+                       test_variants.py, test_gold_bot.py (gold runner),
+                       test_alpaca_client.py + test_alpaca_runner.py
+                       (ORB-15 forward-test layer, all mocked)
 .env.example           credential env-var names (placeholders only)
 data/                  cached bar data (gitignored)
 results/               trade logs + summary.json (gitignored locally)
@@ -801,9 +915,11 @@ results/               trade logs + summary.json (gitignored locally)
 
 ## How to run
 
-Tests (60: engine math/scenarios, contract sizing & cap, skipped-for-
+Tests (140: engine math/scenarios, contract sizing & cap, skipped-for-
 size, equity tracking, Tradovate mocks incl. kill-switch refusal,
-variant gates, and the gold runner wiring):
+variant gates, the gold runner wiring, and the Alpaca paper layer —
+host lock, kill switch, full-day state-machine simulations, restart
+reconciliation, live-frontier gate):
 
 ```bash
 cd ~/workspace/fcr-bot
@@ -832,6 +948,14 @@ from environment variables (see `.env.example`). With no credentials
 set it raises a clear `MissingCredentialsError`; with the kill switch
 off it can only build demo-environment requests. There is deliberately
 **no CLI that places orders**.
+
+Alpaca layer: `.venv/bin/python run_orb15_alpaca_replay.py` replays
+the runner against the Polygon tape offline (no credentials needed)
+and writes `results/orb15_alpaca_replay.json`. The live runner is
+`.venv/bin/python -m alpaca.runner` — it refuses to start without
+`ALPACA_PAPER_*` credentials, and places no orders unless
+`ALPACA_RUNNER_ENABLED=true`. See the "ORB-15 Alpaca paper forward
+test" section above and `deploy/INSTALL_orb15_alpaca.md`.
 
 ## What a *real* evaluation needs
 
