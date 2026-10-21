@@ -803,6 +803,31 @@ reshape the payoff versus the shares expression — so this
 forward test is the variant's first measurement, not a
 confirmation of the shares or MES results.
 
+**Options MODELED history (2026-10-21; not real quotes).** To
+answer "what would the options variant have done over 120 days /
+2 years?" without historical options quotes, the 498 frozen
+ORB-15 trades were re-priced as options via Black-Scholes off
+the Polygon SIP tape (`run_orb15_options_modeled.py`,
+`fcr/options_model.py`; full record
+`results/orb15_options_modeled.json`). **This is a model, not a
+backtest** — IV is the dominant error source, so results are a
+band across anchors, never a point estimate. Full 24 months:
+realized-IV anchor (×1.00) **+$561** (end $1,061, trough $400,
+vs shares +$6,803 on identical trades); ×0.85 anchor +$4,942;
+×1.20 anchor **−$2,861**; wide-spread sensitivity −$313; VIX
+anchor −$5,305 (its 30-day IV trips the $2.50 gate on 385 of
+498 days, so it trades a selected subset). Last 120 trading
+days: **every anchor negative** (realized −$2,129) — the shares
+decay, amplified by theta. Decay diagnostic (anchor a, 24mo):
+**38 of 195** shares-winners lost in options; only 1 shares-
+loser flipped to an options win. Ground-truth check against
+the one real quote we hold (2026-10-21 15:44 ET, 0DTE 773 call,
+actual ask $0.84): realized anchors model $0.35–$0.47 — they
+UNDERPRICE near expiry by ~half; the VIX anchor ($0.73) lands
+closest. Real quotes are purchasable (Databento OPRA / Polygon
+options) if the band ever justifies it; the paper forward test
+above remains the arbiter.
+
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
 Execution model: entries fill at the engulfing bar's close; exits at
