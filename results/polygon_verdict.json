@@ -1,0 +1,450 @@
+{
+  "generated_at": "2026-10-21T13:05:20-04:00",
+  "question": "Do the Databento SPY verdicts survive a re-check on Polygon's consolidated SIP tape?",
+  "data": {
+    "file": "data/spy_1m_polygon.csv",
+    "raw": "data/spy_1m_polygon.jsonl (never published)",
+    "source": "Polygon.io aggregates API via the custom.polygon connector, adjusted=false (raw prices), Stocks Basic plan",
+    "window": {
+      "start": "2024-10-21",
+      "end": "2026-10-19",
+      "bars_in_window": 430899,
+      "bars_total": 431824
+    },
+    "friction_per_unit_usd": 0.04,
+    "pass_test": "(a) 24m net-after-friction > 0 AND (b) H2 (2025-10-21 -> end) net-after-friction > 0 AND (c) after-friction realized-equity trough > $0 \u2014 identical to validation24.",
+    "confirmed_rule": "CONFIRMED = passes the frozen test on Polygon AND net-after-friction > 0 on the Databento 24mo file."
+  },
+  "tape_verification": {
+    "consolidation": {
+      "sample_days": [
+        {
+          "date": "2025-03-10",
+          "polygon": {
+            "bars": 925,
+            "rth_bars": 390,
+            "day_volume": 93438274.0,
+            "rth_volume": 80004157.0
+          },
+          "databento": {
+            "bars": 473,
+            "rth_bars": 390,
+            "day_volume": 2422608.0,
+            "rth_volume": 2406012.0
+          },
+          "polygon_to_databento_day_volume": 38.57
+        },
+        {
+          "date": "2026-06-15",
+          "polygon": {
+            "bars": 913,
+            "rth_bars": 390,
+            "day_volume": 57942914.61501901,
+            "rth_volume": 43920305.473057
+          },
+          "databento": {
+            "bars": 491,
+            "rth_bars": 390,
+            "day_volume": 1919589.0,
+            "rth_volume": 1179117.0
+          },
+          "polygon_to_databento_day_volume": 30.19
+        },
+        {
+          "date": "2026-10-15",
+          "polygon": {
+            "bars": 913,
+            "rth_bars": 390,
+            "day_volume": 42140626.630999,
+            "rth_volume": 35562640.41095801
+          },
+          "databento": {
+            "bars": 448,
+            "rth_bars": 390,
+            "day_volume": 1656532.0,
+            "rth_volume": 943182.0
+          },
+          "polygon_to_databento_day_volume": 25.44
+        }
+      ],
+      "consolidated": true,
+      "rule": "Polygon is the consolidated tape if every sample day shows >= 20M shares AND >= 5x the Databento DBEQ.BASIC day volume."
+    },
+    "determinism": {
+      "repull_file": "/tmp/spy_poly_week_repull.jsonl",
+      "performed": true,
+      "window": "2026-06-15 -> 2026-06-19 (4 trading days; 2026-06-19 is the Juneteenth holiday)",
+      "repull_bars": 3644,
+      "main_pull_bars_in_span": 3644,
+      "timestamp_sets_identical": true,
+      "bars_differing_ohlcv": 0,
+      "identical": true
+    },
+    "cross_sample": {
+      "shared_rth_timestamps": 194084,
+      "polygon_rth_bars": 194495,
+      "databento_rth_bars": 194135,
+      "bars_differing_close_gt_0.001": 164193,
+      "share_differing": 0.846,
+      "median_abs_dclose_differing": 0.025,
+      "median_abs_dclose_all_shared": 0.02,
+      "max_abs_dclose": 2.45,
+      "reference": "The two Databento pulls differed on 10,234 of 37,015 overlap bars (median |dClose| $0.11) \u2014 the disagreement this third sample arbitrates."
+    }
+  },
+  "cells": [
+    {
+      "strategy": "ib_break",
+      "databento_24mo": {
+        "data_file": "data/spy_1m_24mo.csv",
+        "trades": 415,
+        "net_usd_after_friction": 5119.23,
+        "h1_after_friction_usd": 3431.22,
+        "h2_after_friction_usd": 1688.01,
+        "trough_after_friction_usd": 500.0,
+        "frozen_pass": true,
+        "verdict": "PASS",
+        "cross_sample_stability_db_pulls": "STABLE"
+      },
+      "polygon": {
+        "id": "ib_break_spy_poly",
+        "strategy": "ib_break",
+        "strategy_label": "Initial Balance breakout",
+        "symbol": "SPY",
+        "symbol_key": "spy",
+        "data_file": "data/spy_1m_polygon.csv",
+        "data_symbol": "SPY (Polygon SIP)",
+        "point_value_usd": 1.0,
+        "friction_per_unit_usd": 0.04,
+        "window": {
+          "start": "2024-10-21",
+          "end": "2026-10-19",
+          "bars_in_window": 430899,
+          "bars_total": 431824
+        },
+        "trading_days": 500,
+        "trades": 413,
+        "wins": 172,
+        "losses": 241,
+        "win_rate": 0.4165,
+        "net_usd": 2350.87,
+        "net_r": 15.711,
+        "net_usd_after_friction": 644.31,
+        "ending_equity_usd": 2850.87,
+        "ending_equity_usd_after_friction": 1144.31,
+        "max_drawdown_usd": 3165.49,
+        "skipped_for_size": 0,
+        "trade_log": "results/trades_ib_break_spy_poly.csv",
+        "halves": {
+          "h1": {
+            "trades": 214,
+            "net_after_friction_usd": -190.97,
+            "net_r": 5.186
+          },
+          "h2": {
+            "trades": 199,
+            "net_after_friction_usd": 835.28,
+            "net_r": 10.525
+          }
+        },
+        "trough_after_friction_usd": -1785.72,
+        "trough_after_friction_at": "2026-04-10 11:32",
+        "pass": {
+          "a_net_after_friction_positive": true,
+          "b_h2_net_after_friction_positive": true,
+          "c_trough_above_zero": false,
+          "passed": false
+        },
+        "verdict": "FAIL"
+      },
+      "confirmed": false,
+      "final_call": "NOT CONFIRMED \u2014 fails the frozen test on the Polygon SIP tape (failed criteria: c)."
+    },
+    {
+      "strategy": "fcr_v0",
+      "databento_24mo": {
+        "data_file": "data/spy_1m_24mo.csv",
+        "trades": 171,
+        "net_usd_after_friction": -181.55,
+        "h1_after_friction_usd": 965.51,
+        "h2_after_friction_usd": -1147.06,
+        "trough_after_friction_usd": 35.81,
+        "frozen_pass": false,
+        "verdict": "FAIL",
+        "cross_sample_stability_db_pulls": "FLIPPED"
+      },
+      "polygon": {
+        "id": "fcr_v0_spy_poly",
+        "strategy": "fcr_v0",
+        "strategy_label": "First Candle Rule V0 baseline (reference)",
+        "symbol": "SPY",
+        "symbol_key": "spy",
+        "data_file": "data/spy_1m_polygon.csv",
+        "data_symbol": "SPY (Polygon SIP)",
+        "point_value_usd": 1.0,
+        "friction_per_unit_usd": 0.04,
+        "window": {
+          "start": "2024-10-21",
+          "end": "2026-10-19",
+          "bars_in_window": 430899,
+          "bars_total": 431824
+        },
+        "trading_days": 500,
+        "trades": 191,
+        "wins": 49,
+        "losses": 142,
+        "win_rate": 0.2565,
+        "net_usd": 550.2,
+        "net_r": 3.642,
+        "net_usd_after_friction": -3072.8,
+        "ending_equity_usd": 1050.2,
+        "ending_equity_usd_after_friction": -2572.8,
+        "max_drawdown_usd": 5839.7,
+        "skipped_for_size": 0,
+        "trade_log": "results/trades_fcr_v0_spy_poly.csv",
+        "halves": {
+          "h1": {
+            "trades": 88,
+            "net_after_friction_usd": 2805.93,
+            "net_r": 30.642
+          },
+          "h2": {
+            "trades": 103,
+            "net_after_friction_usd": -5878.73,
+            "net_r": -27.0
+          }
+        },
+        "trough_after_friction_usd": -3370.02,
+        "trough_after_friction_at": "2026-08-31 11:45",
+        "pass": {
+          "a_net_after_friction_positive": false,
+          "b_h2_net_after_friction_positive": false,
+          "c_trough_above_zero": false,
+          "passed": false
+        },
+        "verdict": "FAIL"
+      },
+      "confirmed": false,
+      "final_call": "NOT CONFIRMED \u2014 fails the frozen test on the Polygon SIP tape (failed criteria: a, b, c)."
+    },
+    {
+      "strategy": "vwap_trend",
+      "databento_24mo": {
+        "data_file": "data/spy_1m_24mo.csv",
+        "trades": 272,
+        "net_usd_after_friction": 4013.33,
+        "h1_after_friction_usd": 1235.43,
+        "h2_after_friction_usd": 2777.9,
+        "trough_after_friction_usd": -217.56,
+        "frozen_pass": false,
+        "verdict": "FAIL",
+        "cross_sample_stability_db_pulls": "STABLE"
+      },
+      "polygon": {
+        "id": "vwap_trend_spy_poly",
+        "strategy": "vwap_trend",
+        "strategy_label": "VWAP trend pullback",
+        "symbol": "SPY",
+        "symbol_key": "spy",
+        "data_file": "data/spy_1m_polygon.csv",
+        "data_symbol": "SPY (Polygon SIP)",
+        "point_value_usd": 1.0,
+        "friction_per_unit_usd": 0.04,
+        "window": {
+          "start": "2024-10-21",
+          "end": "2026-10-19",
+          "bars_in_window": 430899,
+          "bars_total": 431824
+        },
+        "trading_days": 500,
+        "trades": 263,
+        "wins": 100,
+        "losses": 163,
+        "win_rate": 0.3802,
+        "net_usd": 4727.26,
+        "net_r": 31.555,
+        "net_usd_after_friction": 999.1,
+        "ending_equity_usd": 5227.26,
+        "ending_equity_usd_after_friction": 1499.1,
+        "max_drawdown_usd": 1798.46,
+        "skipped_for_size": 0,
+        "trade_log": "results/trades_vwap_trend_spy_poly.csv",
+        "halves": {
+          "h1": {
+            "trades": 137,
+            "net_after_friction_usd": 874.81,
+            "net_r": 19.189
+          },
+          "h2": {
+            "trades": 126,
+            "net_after_friction_usd": 124.29,
+            "net_r": 12.366
+          }
+        },
+        "trough_after_friction_usd": 171.81,
+        "trough_after_friction_at": "2024-10-25 11:19",
+        "pass": {
+          "a_net_after_friction_positive": true,
+          "b_h2_net_after_friction_positive": true,
+          "c_trough_above_zero": true,
+          "passed": true
+        },
+        "verdict": "PASS"
+      },
+      "confirmed": true,
+      "final_call": "CONFIRMED \u2014 passes the frozen test on the Polygon SIP tape and was positive after friction on the Databento 24mo file."
+    },
+    {
+      "strategy": "orb15",
+      "databento_24mo": {
+        "data_file": "data/spy_1m_24mo.csv",
+        "trades": 498,
+        "net_usd_after_friction": 7157.36,
+        "h1_after_friction_usd": 6979.37,
+        "h2_after_friction_usd": 177.99,
+        "trough_after_friction_usd": 340.81,
+        "frozen_pass": true,
+        "verdict": "PASS (single-sample, unstable)",
+        "cross_sample_stability_db_pulls": "FLIPPED"
+      },
+      "polygon": {
+        "id": "orb15_spy_poly",
+        "strategy": "orb15",
+        "strategy_label": "ORB 15-min opening range breakout (2R target)",
+        "symbol": "SPY",
+        "symbol_key": "spy",
+        "data_file": "data/spy_1m_polygon.csv",
+        "data_symbol": "SPY (Polygon SIP)",
+        "point_value_usd": 1.0,
+        "friction_per_unit_usd": 0.04,
+        "window": {
+          "start": "2024-10-21",
+          "end": "2026-10-19",
+          "bars_in_window": 430899,
+          "bars_total": 431824
+        },
+        "trading_days": 500,
+        "trades": 498,
+        "wins": 214,
+        "losses": 284,
+        "win_rate": 0.4297,
+        "net_usd": 8608.8,
+        "net_r": 57.811,
+        "net_usd_after_friction": 6803.4,
+        "ending_equity_usd": 9108.8,
+        "ending_equity_usd_after_friction": 7303.4,
+        "max_drawdown_usd": 1738.37,
+        "skipped_for_size": 0,
+        "trade_log": "results/trades_orb15_spy_poly.csv",
+        "halves": {
+          "h1": {
+            "trades": 250,
+            "net_after_friction_usd": 5674.36,
+            "net_r": 45.146
+          },
+          "h2": {
+            "trades": 248,
+            "net_after_friction_usd": 1129.04,
+            "net_r": 12.665
+          }
+        },
+        "trough_after_friction_usd": 339.98,
+        "trough_after_friction_at": "2024-10-21 10:31",
+        "pass": {
+          "a_net_after_friction_positive": true,
+          "b_h2_net_after_friction_positive": true,
+          "c_trough_above_zero": true,
+          "passed": true
+        },
+        "verdict": "PASS"
+      },
+      "confirmed": true,
+      "final_call": "CONFIRMED \u2014 passes the frozen test on the Polygon SIP tape and was positive after friction on the Databento 24mo file."
+    }
+  ],
+  "portfolio": {
+    "databento_24mo": {
+      "trades_taken": 847,
+      "net_usd": 8150.33,
+      "trough_usd": 500.0,
+      "pass": true
+    },
+    "polygon": {
+      "components": [
+        {
+          "run_id": "ib_break_spy_poly",
+          "strategy": "ib_break",
+          "symbol": "SPY",
+          "standalone": {
+            "trades": 413,
+            "net_usd": 2350.87,
+            "net_r": 15.711,
+            "net_after_friction_usd": 644.31,
+            "max_drawdown_usd": 3165.49
+          },
+          "trades_considered": 413,
+          "trades_taken": 408,
+          "trades_skipped_by_cap": 5,
+          "taken_net_usd": -57.61
+        },
+        {
+          "run_id": "fcr_v0_spy_poly",
+          "strategy": "fcr_v0",
+          "symbol": "SPY",
+          "standalone": {
+            "trades": 191,
+            "net_usd": 550.2,
+            "net_r": 3.642,
+            "net_after_friction_usd": -3072.8,
+            "max_drawdown_usd": 5839.7
+          },
+          "trades_considered": 191,
+          "trades_taken": 189,
+          "trades_skipped_by_cap": 2,
+          "taken_net_usd": -2683.18
+        },
+        {
+          "run_id": "vwap_trend_spy_poly",
+          "strategy": "vwap_trend",
+          "symbol": "SPY",
+          "standalone": {
+            "trades": 263,
+            "net_usd": 4727.26,
+            "net_r": 31.555,
+            "net_after_friction_usd": 999.1,
+            "max_drawdown_usd": 1798.46
+          },
+          "trades_considered": 263,
+          "trades_taken": 259,
+          "trades_skipped_by_cap": 4,
+          "taken_net_usd": 1184.33
+        }
+      ],
+      "risk_cap_usd": 300.0,
+      "starting_balance_usd": 500.0,
+      "combined": {
+        "trades_considered": 867,
+        "trades_taken": 856,
+        "trades_skipped_by_cap": 11,
+        "wins": 317,
+        "losses": 539,
+        "win_rate": 0.3703,
+        "net_usd": -1556.46,
+        "ending_equity_usd": -1056.46,
+        "max_drawdown_usd": 8470.71,
+        "trough_usd": -2382.42,
+        "trough_at": "2026-10-09 10:41",
+        "naive_uncapped_sum_usd": -1429.39
+      },
+      "pass": {
+        "net_positive": false,
+        "trough_above_zero": false,
+        "passed": false
+      },
+      "simplifications": "Same as build_portfolio.py: realized pnl at exit times only (no mark-to-market), each trade keeps its own strategy's recorded size, $300 summed open-risk cap.",
+      "trade_log": "results/trades_portfolio_polygon_combined.csv"
+    },
+    "confirmed": false,
+    "final_call": "NOT CONFIRMED \u2014 the trio does not pass on both tapes (see per-tape numbers)."
+  }
+}
