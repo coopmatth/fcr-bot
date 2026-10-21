@@ -1,0 +1,75 @@
+{
+  "components": [
+    {
+      "run_id": "ib_break_spy_poly",
+      "strategy": "ib_break",
+      "symbol": "SPY",
+      "standalone": {
+        "trades": 413,
+        "net_usd": 2350.87,
+        "net_r": 15.711,
+        "net_after_friction_usd": 644.31,
+        "max_drawdown_usd": 3165.49
+      },
+      "trades_considered": 413,
+      "trades_taken": 408,
+      "trades_skipped_by_cap": 5,
+      "taken_net_usd": -57.61
+    },
+    {
+      "run_id": "fcr_v0_spy_poly",
+      "strategy": "fcr_v0",
+      "symbol": "SPY",
+      "standalone": {
+        "trades": 191,
+        "net_usd": 550.2,
+        "net_r": 3.642,
+        "net_after_friction_usd": -3072.8,
+        "max_drawdown_usd": 5839.7
+      },
+      "trades_considered": 191,
+      "trades_taken": 189,
+      "trades_skipped_by_cap": 2,
+      "taken_net_usd": -2683.18
+    },
+    {
+      "run_id": "vwap_trend_spy_poly",
+      "strategy": "vwap_trend",
+      "symbol": "SPY",
+      "standalone": {
+        "trades": 263,
+        "net_usd": 4727.26,
+        "net_r": 31.555,
+        "net_after_friction_usd": 999.1,
+        "max_drawdown_usd": 1798.46
+      },
+      "trades_considered": 263,
+      "trades_taken": 259,
+      "trades_skipped_by_cap": 4,
+      "taken_net_usd": 1184.33
+    }
+  ],
+  "risk_cap_usd": 300.0,
+  "starting_balance_usd": 500.0,
+  "combined": {
+    "trades_considered": 867,
+    "trades_taken": 856,
+    "trades_skipped_by_cap": 11,
+    "wins": 317,
+    "losses": 539,
+    "win_rate": 0.3703,
+    "net_usd": -1556.46,
+    "ending_equity_usd": -1056.46,
+    "max_drawdown_usd": 8470.71,
+    "trough_usd": -2382.42,
+    "trough_at": "2026-10-09 10:41",
+    "naive_uncapped_sum_usd": -1429.39
+  },
+  "pass": {
+    "net_positive": false,
+    "trough_above_zero": false,
+    "passed": false
+  },
+  "simplifications": "Same as build_portfolio.py: realized pnl at exit times only (no mark-to-market), each trade keeps its own strategy's recorded size, $300 summed open-risk cap.",
+  "trade_log": "results/trades_portfolio_polygon_combined.csv"
+}
