@@ -1,0 +1,568 @@
+{
+  "generated_at": "2026-10-21T12:37:08-04:00",
+  "question": "Do the Strategy Lab's top cells survive 24 months, net of friction?",
+  "status": "COMPLETE. pd_sweep MGC validated on the deterministic futures file: FAIL net of friction. SPY cells completed on the single new pull (data/spy_1m_24mo.csv) \u2014 the only honest route once cross-pull reproducibility failed \u2014 with cross-sample stability reported next to every verdict: ib_break and vwap_trend are STABLE across the two pulls on the lab window; fcr_v0 and orb15 FLIPPED sign. SPY verdicts are therefore single-sample results by construction, and the lab's SPY cells carry the same caveat.",
+  "window": {
+    "start": "2024-10-21",
+    "spy_end": "2026-10-19",
+    "mgc_end": "2026-10-20"
+  },
+  "data_quality_note": "SPY 2024-11-19 flagged degraded in Databento metadata; retained in full (407 bars in file) \u2014 nothing dropped. GC had no flagged days in the file (GLBX.MDP3).",
+  "slice_verification": {
+    "window": {
+      "start": "2026-06-22",
+      "end": "2026-10-20"
+    },
+    "rule": "exact match with results/strategy_lab.json on trades, gross net $, net-after-friction $",
+    "cells": [
+      {
+        "cell": "ib_break_spy",
+        "expected": {
+          "trades": 68,
+          "net_usd": 1385.14,
+          "net_after_friction": 1115.58
+        },
+        "got_on_new_file": {
+          "trades": 68,
+          "net_usd": 1484.55,
+          "net_after_friction": 1216.55
+        },
+        "match": false
+      },
+      {
+        "cell": "fcr_v0_spy",
+        "expected": {
+          "trades": 26,
+          "net_usd": 1496.26,
+          "net_after_friction": 1001.62
+        },
+        "got_on_new_file": {
+          "trades": 32,
+          "net_usd": -604.15,
+          "net_after_friction": -1281.03
+        },
+        "match": false
+      },
+      {
+        "cell": "vwap_trend_spy",
+        "expected": {
+          "trades": 45,
+          "net_usd": 1638.15,
+          "net_after_friction": 829.15
+        },
+        "got_on_new_file": {
+          "trades": 40,
+          "net_usd": 1024.44,
+          "net_after_friction": 409.36
+        },
+        "match": false
+      },
+      {
+        "cell": "orb15_spy",
+        "expected": {
+          "trades": 83,
+          "net_usd": 754.35,
+          "net_after_friction": 455.07
+        },
+        "got_on_new_file": {
+          "trades": 83,
+          "net_usd": -164.84,
+          "net_after_friction": -462.32
+        },
+        "match": false
+      },
+      {
+        "cell": "pd_sweep_mgc",
+        "expected": {
+          "trades": 29,
+          "net_usd": 1153.0,
+          "net_after_friction": 726.2
+        },
+        "got_on_new_file": {
+          "trades": 29,
+          "net_usd": 1153.0,
+          "net_after_friction": 726.2
+        },
+        "match": true
+      }
+    ],
+    "confirmatory_check": "Re-running all four SPY cells on the ORIGINAL lab file (data/spy_1m_120d.csv) reproduces strategy_lab.json EXACTLY (ib_break 68t +$1,385.14/+$1,115.58; orb15 83t +$754.35/+$455.07; vwap_trend 45t +$1,638.15/+$829.15; fcr_v0 26t +$1,496.26/+$1,001.62). The lab is internally consistent and the slice method is correct; the failure is in the data, not the route or the engines."
+  },
+  "diagnosis": {
+    "finding": "Databento DBEQ.BASIC SPY 1-minute bars are NOT reproducible across independent pulls. Every pair of on-disk pulls disagrees on roughly a third of bars in their overlap, prices included.",
+    "evidence": [
+      "spy_1m_120d.csv (lab file) vs spy_1m_24mo.csv (validation file), overlap 2026-06-22..2026-10-19: identical timestamps and identical per-day bar counts (37,015 bars), but 10,234 bars differ in OHLCV \u2014 10,202 in price (median |dClose| $0.11, p99 $0.62, max $6.66) and 10,181 in volume; differing bars occur on all 84 overlap days.",
+      "Triangulation with the third pull (spy_1m_databento.csv, the 60-day file): 60d vs 120d disagree on 6,972/21,737 bars; 60d vs 24mo disagree on 7,425/21,737. No two pulls agree with each other.",
+      "Character of the diffs: the sparser pull shows many bars as single prints (open==close, volume 1-100) where another pull shows full consolidated bars (volume in the thousands) at the same timestamps \u2014 consistent with DBEQ.BASIC's sampled/basic feed construction rather than a deterministic consolidated tape.",
+      "By contrast the GLBX.MDP3 futures files are deterministic: gc_1m_24mo.csv IS the file the lab used and reproduces pd_sweep MGC to the cent (and earlier FCR gold work reproduced exactly as well)."
+    ],
+    "implication": "A 24-month SPY validation pulled separately from the lab can never slice-match the lab, and neither pull can be shown to be 'the' SPY tape. SPY intraday conclusions from DBEQ.BASIC (including the lab's SPY cells) rest on whichever single pull produced them. Remedies: (1) re-pull SPY 24 months once and re-run BOTH the 120-day lab slice and the 24-month validation from that single file, or (2) switch SPY intraday data to a deterministic consolidated dataset and re-baseline the lab on it.",
+    "decision": "SPY 24-month cells and the 3-component SPY portfolio were NOT run as validation and nothing was published (no build_site.py change, no GitHub push, no Vercel deploy for the validation). The one cell whose route verified \u2014 pd_sweep on MGC, same file as the lab \u2014 was run in full and is reported below."
+  },
+  "cells": [
+    {
+      "id": "pd_sweep_mgc_24mo",
+      "strategy": "pd_sweep",
+      "strategy_label": "Previous-day sweep (liquidity fade)",
+      "symbol": "MGC",
+      "symbol_key": "mgc",
+      "data_file": "data/gc_1m_24mo.csv",
+      "data_symbol": "GC.v.0 tape (GLBX.MDP3)",
+      "point_value_usd": 10.0,
+      "friction_per_unit_usd": 4.4,
+      "window": {
+        "start": "2024-10-21",
+        "end": "2026-10-20"
+      },
+      "trading_days": 516,
+      "trades": 184,
+      "wins": 67,
+      "losses": 117,
+      "win_rate": 0.3641,
+      "net_usd": 1168.0,
+      "net_r": 8.6,
+      "net_usd_after_friction": -1564.4,
+      "ending_equity_usd": 1668.0,
+      "ending_equity_usd_after_friction": -1064.4,
+      "max_drawdown_usd": 1270.0,
+      "skipped_for_size": 54,
+      "trade_log": "results/trades_pd_sweep_mgc_24mo.csv",
+      "halves": {
+        "h1": {
+          "trades": 106,
+          "net_after_friction_usd": -1735.8,
+          "net_r": 3.842
+        },
+        "h2": {
+          "trades": 78,
+          "net_after_friction_usd": 171.4,
+          "net_r": 4.758
+        }
+      },
+      "trough_after_friction_usd": -2116.2,
+      "trough_after_friction_at": "2026-08-20 11:00",
+      "pass": {
+        "a_net_after_friction_positive": false,
+        "b_h2_net_after_friction_positive": true,
+        "c_trough_above_zero": false,
+        "passed": false
+      }
+    },
+    {
+      "id": "ib_break_spy_24mo",
+      "strategy": "ib_break",
+      "strategy_label": "Initial Balance breakout",
+      "symbol": "SPY",
+      "symbol_key": "spy",
+      "data_file": "data/spy_1m_24mo.csv",
+      "data_symbol": "SPY (DBEQ.BASIC)",
+      "point_value_usd": 1.0,
+      "friction_per_unit_usd": 0.04,
+      "window": {
+        "start": "2024-10-21",
+        "end": "2026-10-19"
+      },
+      "trading_days": 500,
+      "trades": 415,
+      "wins": 185,
+      "losses": 230,
+      "win_rate": 0.4458,
+      "net_usd": 6872.31,
+      "net_r": 46.128,
+      "net_usd_after_friction": 5119.23,
+      "ending_equity_usd": 7372.31,
+      "ending_equity_usd_after_friction": 5619.23,
+      "max_drawdown_usd": 2206.47,
+      "skipped_for_size": 0,
+      "trade_log": "results/trades_ib_break_spy_24mo.csv",
+      "halves": {
+        "h1": {
+          "trades": 213,
+          "net_after_friction_usd": 3431.22,
+          "net_r": 29.711
+        },
+        "h2": {
+          "trades": 202,
+          "net_after_friction_usd": 1688.01,
+          "net_r": 16.417
+        }
+      },
+      "trough_after_friction_usd": 500.0,
+      "trough_after_friction_at": "start",
+      "pass": {
+        "a_net_after_friction_positive": true,
+        "b_h2_net_after_friction_positive": true,
+        "c_trough_above_zero": true,
+        "passed": true
+      },
+      "cross_sample_stability": "STABLE",
+      "verdict": "PASS"
+    },
+    {
+      "id": "fcr_v0_spy_24mo",
+      "strategy": "fcr_v0",
+      "strategy_label": "First Candle Rule V0 baseline (reference)",
+      "symbol": "SPY",
+      "symbol_key": "spy",
+      "data_file": "data/spy_1m_24mo.csv",
+      "data_symbol": "SPY (DBEQ.BASIC)",
+      "point_value_usd": 1.0,
+      "friction_per_unit_usd": 0.04,
+      "window": {
+        "start": "2024-10-21",
+        "end": "2026-10-19"
+      },
+      "trading_days": 500,
+      "trades": 171,
+      "wins": 48,
+      "losses": 123,
+      "win_rate": 0.2807,
+      "net_usd": 3231.21,
+      "net_r": 21.554,
+      "net_usd_after_friction": -181.55,
+      "ending_equity_usd": 3731.24,
+      "ending_equity_usd_after_friction": 318.45,
+      "max_drawdown_usd": 1947.69,
+      "skipped_for_size": 0,
+      "trade_log": "results/trades_fcr_v0_spy_24mo.csv",
+      "halves": {
+        "h1": {
+          "trades": 83,
+          "net_after_friction_usd": 965.51,
+          "net_r": 16.989
+        },
+        "h2": {
+          "trades": 88,
+          "net_after_friction_usd": -1147.06,
+          "net_r": 4.565
+        }
+      },
+      "trough_after_friction_usd": 35.81,
+      "trough_after_friction_at": "2026-10-13 10:02",
+      "pass": {
+        "a_net_after_friction_positive": false,
+        "b_h2_net_after_friction_positive": false,
+        "c_trough_above_zero": true,
+        "passed": false
+      },
+      "cross_sample_stability": "FLIPPED",
+      "verdict": "FAIL"
+    },
+    {
+      "id": "vwap_trend_spy_24mo",
+      "strategy": "vwap_trend",
+      "strategy_label": "VWAP trend pullback",
+      "symbol": "SPY",
+      "symbol_key": "spy",
+      "data_file": "data/spy_1m_24mo.csv",
+      "data_symbol": "SPY (DBEQ.BASIC)",
+      "point_value_usd": 1.0,
+      "friction_per_unit_usd": 0.04,
+      "window": {
+        "start": "2024-10-21",
+        "end": "2026-10-19"
+      },
+      "trading_days": 500,
+      "trades": 272,
+      "wins": 111,
+      "losses": 161,
+      "win_rate": 0.4081,
+      "net_usd": 8622.05,
+      "net_r": 57.587,
+      "net_usd_after_friction": 4013.33,
+      "ending_equity_usd": 9122.05,
+      "ending_equity_usd_after_friction": 4513.33,
+      "max_drawdown_usd": 3071.27,
+      "skipped_for_size": 0,
+      "trade_log": "results/trades_vwap_trend_spy_24mo.csv",
+      "halves": {
+        "h1": {
+          "trades": 140,
+          "net_after_friction_usd": 1235.43,
+          "net_r": 23.944
+        },
+        "h2": {
+          "trades": 132,
+          "net_after_friction_usd": 2777.9,
+          "net_r": 33.643
+        }
+      },
+      "trough_after_friction_usd": -217.56,
+      "trough_after_friction_at": "2025-06-25 10:44",
+      "pass": {
+        "a_net_after_friction_positive": true,
+        "b_h2_net_after_friction_positive": true,
+        "c_trough_above_zero": false,
+        "passed": false
+      },
+      "cross_sample_stability": "STABLE",
+      "verdict": "FAIL"
+    },
+    {
+      "id": "orb15_spy_24mo",
+      "strategy": "orb15",
+      "strategy_label": "ORB 15-min opening range breakout (2R target)",
+      "symbol": "SPY",
+      "symbol_key": "spy",
+      "data_file": "data/spy_1m_24mo.csv",
+      "data_symbol": "SPY (DBEQ.BASIC)",
+      "point_value_usd": 1.0,
+      "friction_per_unit_usd": 0.04,
+      "window": {
+        "start": "2024-10-21",
+        "end": "2026-10-19"
+      },
+      "trading_days": 500,
+      "trades": 498,
+      "wins": 213,
+      "losses": 285,
+      "win_rate": 0.4277,
+      "net_usd": 9097.52,
+      "net_r": 60.908,
+      "net_usd_after_friction": 7157.36,
+      "ending_equity_usd": 9597.52,
+      "ending_equity_usd_after_friction": 7657.36,
+      "max_drawdown_usd": 1735.73,
+      "skipped_for_size": 0,
+      "trade_log": "results/trades_orb15_spy_24mo.csv",
+      "halves": {
+        "h1": {
+          "trades": 250,
+          "net_after_friction_usd": 6979.37,
+          "net_r": 54.263
+        },
+        "h2": {
+          "trades": 248,
+          "net_after_friction_usd": 177.99,
+          "net_r": 6.645
+        }
+      },
+      "trough_after_friction_usd": 340.81,
+      "trough_after_friction_at": "2024-10-21 10:31",
+      "pass": {
+        "a_net_after_friction_positive": true,
+        "b_h2_net_after_friction_positive": true,
+        "c_trough_above_zero": true,
+        "passed": true
+      },
+      "cross_sample_stability": "FLIPPED",
+      "verdict": "PASS (single-sample, unstable)"
+    }
+  ],
+  "portfolio": {
+    "components": [
+      {
+        "run_id": "ib_break_spy_24mo",
+        "strategy": "ib_break",
+        "symbol": "SPY",
+        "standalone": {
+          "trades": 415,
+          "net_usd": 6872.31,
+          "net_r": 46.128,
+          "net_after_friction_usd": 5119.23,
+          "max_drawdown_usd": 2206.47
+        },
+        "trades_considered": 415,
+        "trades_taken": 411,
+        "trades_skipped_by_cap": 4,
+        "taken_net_usd": 4354.0
+      },
+      {
+        "run_id": "fcr_v0_spy_24mo",
+        "strategy": "fcr_v0",
+        "symbol": "SPY",
+        "standalone": {
+          "trades": 171,
+          "net_usd": 3231.21,
+          "net_r": 21.554,
+          "net_after_friction_usd": -181.55,
+          "max_drawdown_usd": 1947.69
+        },
+        "trades_considered": 171,
+        "trades_taken": 168,
+        "trades_skipped_by_cap": 3,
+        "taken_net_usd": -261.13
+      },
+      {
+        "run_id": "vwap_trend_spy_24mo",
+        "strategy": "vwap_trend",
+        "symbol": "SPY",
+        "standalone": {
+          "trades": 272,
+          "net_usd": 8622.05,
+          "net_r": 57.587,
+          "net_after_friction_usd": 4013.33,
+          "max_drawdown_usd": 3071.27
+        },
+        "trades_considered": 272,
+        "trades_taken": 268,
+        "trades_skipped_by_cap": 4,
+        "taken_net_usd": 4057.46
+      }
+    ],
+    "risk_cap_usd": 300.0,
+    "starting_balance_usd": 500.0,
+    "combined": {
+      "trades_considered": 858,
+      "trades_taken": 847,
+      "trades_skipped_by_cap": 11,
+      "wins": 338,
+      "losses": 509,
+      "win_rate": 0.3991,
+      "net_usd": 8150.33,
+      "ending_equity_usd": 8650.33,
+      "max_drawdown_usd": 4889.8,
+      "trough_usd": 500.0,
+      "trough_at": "start",
+      "naive_uncapped_sum_usd": 8951.01
+    },
+    "pass": {
+      "net_positive": true,
+      "trough_above_zero": true,
+      "passed": true
+    },
+    "simplifications": "Same as build_portfolio.py: realized pnl at exit times only (no mark-to-market), each trade keeps its own strategy's recorded size, $300 summed open-risk cap.",
+    "trade_log": "results/trades_portfolio24_combined.csv"
+  },
+  "publish": {
+    "status": "pending \u2014 updated by the publish step of run_validation24_spy.py's follow-up"
+  },
+  "spy_completion": {
+    "method": "Full 24-month runs on data/spy_1m_24mo.csv ONLY (run_validation24_spy.py), frozen lab spec and friction; the gated slice-match requirement is replaced by a cross-sample replication table because the diagnosis proved no two DBEQ.BASIC pulls can slice-match.",
+    "file": "data/spy_1m_24mo.csv",
+    "window": {
+      "start": "2024-10-21",
+      "end": "2026-10-19"
+    },
+    "bars": 224837,
+    "pass_test": "(a) 24m net-after-friction > 0 AND (b) H2 (2025-10-21 -> end) net-after-friction > 0 AND (c) after-friction realized-equity trough > $0. Verdict reported together with cross-sample stability, never merged.",
+    "halves": {
+      "h1": "2024-10-21 -> 2025-10-20",
+      "h2": "2025-10-21 -> end"
+    }
+  },
+  "cross_sample_replication": {
+    "window": {
+      "start": "2026-06-22",
+      "end": "2026-10-20"
+    },
+    "cells": [
+      {
+        "cell": "ib_break_spy",
+        "strategy": "ib_break",
+        "lab_run_id": "ib_break_spy_120d",
+        "window": {
+          "start": "2026-06-22",
+          "end": "2026-10-20"
+        },
+        "lab_file": {
+          "file": "data/spy_1m_120d.csv",
+          "trades": 68,
+          "net_usd": 1385.14,
+          "net_after_friction": 1115.58,
+          "rerun_on_lab_file": {
+            "trades": 68,
+            "net_usd": 1385.14,
+            "net_after_friction": 1115.58
+          },
+          "rerun_matches_lab_record": true
+        },
+        "new_file": {
+          "file": "data/spy_1m_24mo.csv",
+          "trades": 68,
+          "net_usd": 1484.55,
+          "net_after_friction": 1216.55
+        },
+        "stability": "STABLE",
+        "rule": "STABLE = after-friction sign agrees across the two pulls on the identical lab window; FLIPPED = it does not."
+      },
+      {
+        "cell": "fcr_v0_spy",
+        "strategy": "fcr_v0",
+        "lab_run_id": "fcr_v0_spy_120d",
+        "window": {
+          "start": "2026-06-22",
+          "end": "2026-10-20"
+        },
+        "lab_file": {
+          "file": "data/spy_1m_120d.csv",
+          "trades": 26,
+          "net_usd": 1496.26,
+          "net_after_friction": 1001.62,
+          "rerun_on_lab_file": {
+            "trades": 26,
+            "net_usd": 1496.26,
+            "net_after_friction": 1001.62
+          },
+          "rerun_matches_lab_record": true
+        },
+        "new_file": {
+          "file": "data/spy_1m_24mo.csv",
+          "trades": 32,
+          "net_usd": -604.15,
+          "net_after_friction": -1281.03
+        },
+        "stability": "FLIPPED",
+        "rule": "STABLE = after-friction sign agrees across the two pulls on the identical lab window; FLIPPED = it does not."
+      },
+      {
+        "cell": "vwap_trend_spy",
+        "strategy": "vwap_trend",
+        "lab_run_id": "vwap_trend_spy_120d",
+        "window": {
+          "start": "2026-06-22",
+          "end": "2026-10-20"
+        },
+        "lab_file": {
+          "file": "data/spy_1m_120d.csv",
+          "trades": 45,
+          "net_usd": 1638.15,
+          "net_after_friction": 829.15,
+          "rerun_on_lab_file": {
+            "trades": 45,
+            "net_usd": 1638.15,
+            "net_after_friction": 829.15
+          },
+          "rerun_matches_lab_record": true
+        },
+        "new_file": {
+          "file": "data/spy_1m_24mo.csv",
+          "trades": 40,
+          "net_usd": 1024.44,
+          "net_after_friction": 409.36
+        },
+        "stability": "STABLE",
+        "rule": "STABLE = after-friction sign agrees across the two pulls on the identical lab window; FLIPPED = it does not."
+      },
+      {
+        "cell": "orb15_spy",
+        "strategy": "orb15",
+        "lab_run_id": "orb15_spy_120d",
+        "window": {
+          "start": "2026-06-22",
+          "end": "2026-10-20"
+        },
+        "lab_file": {
+          "file": "data/spy_1m_120d.csv",
+          "trades": 83,
+          "net_usd": 754.35,
+          "net_after_friction": 455.07,
+          "rerun_on_lab_file": {
+            "trades": 83,
+            "net_usd": 754.35,
+            "net_after_friction": 455.07
+          },
+          "rerun_matches_lab_record": true
+        },
+        "new_file": {
+          "file": "data/spy_1m_24mo.csv",
+          "trades": 83,
+          "net_usd": -164.84,
+          "net_after_friction": -462.32
+        },
+        "stability": "FLIPPED",
+        "rule": "STABLE = after-friction sign agrees across the two pulls on the identical lab window; FLIPPED = it does not."
+      }
+    ]
+  }
+}
