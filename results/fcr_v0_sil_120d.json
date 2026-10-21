@@ -1,0 +1,33 @@
+{
+  "id": "fcr_v0_sil_120d",
+  "label": "SIL 1m \u00b7 FCR V0 baseline",
+  "strategy": "fcr_v0",
+  "strategy_label": "First Candle Rule V0 baseline (reference)",
+  "symbol": "SIL",
+  "symbol_key": "sil",
+  "data_file": "data/si_1m_120d.csv",
+  "data_symbol": "SI.v.0 tape (GLBX.MDP3)",
+  "instrument_type": "futures",
+  "point_value_usd": 1000.0,
+  "friction_per_unit_usd": 12.4,
+  "window": {
+    "start": "2026-06-22",
+    "end": "2026-10-20"
+  },
+  "trading_days": 87,
+  "trades": 37,
+  "wins": 8,
+  "losses": 29,
+  "win_rate": 0.2162,
+  "net_usd": -905.0,
+  "net_r": -5.0,
+  "starting_balance_usd": 500.0,
+  "ending_equity_usd": -405.0,
+  "max_drawdown_usd": 2035.0,
+  "avg_units": 1.81,
+  "skipped_for_size": 11,
+  "total_friction_usd": 830.8,
+  "net_usd_after_friction": -1735.8,
+  "ending_equity_usd_after_friction": -1235.8,
+  "trade_log": "results/trades_fcr_v0_sil_120d.csv"
+}
