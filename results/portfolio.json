@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-10-21T12:09:39-04:00",
+  "selection_rule": "Top 3 lab cells by net-after-friction $ among runs with >= 15 trades, at most one cell per strategy family (orb15/orb30/orb15_close = one ORB family).",
+  "risk_cap_usd": 300.0,
+  "starting_balance_usd": 500.0,
+  "components": [
+    {
+      "run_id": "ib_break_spy_120d",
+      "strategy": "ib_break",
+      "symbol": "SPY",
+      "standalone": {
+        "trades": 68,
+        "net_usd": 1385.14,
+        "net_r": 9.241,
+        "net_after_friction_usd": 1115.58,
+        "max_drawdown_usd": 1060.61
+      },
+      "trades_considered": 68,
+      "trades_taken": 68,
+      "trades_skipped_by_cap": 0,
+      "taken_net_usd": 1115.58
+    },
+    {
+      "run_id": "fcr_v0_spy_120d",
+      "strategy": "fcr_v0",
+      "symbol": "SPY",
+      "standalone": {
+        "trades": 26,
+        "net_usd": 1496.26,
+        "net_r": 10.0,
+        "net_after_friction_usd": 1001.62,
+        "max_drawdown_usd": 1198.29
+      },
+      "trades_considered": 26,
+      "trades_taken": 25,
+      "trades_skipped_by_cap": 1,
+      "taken_net_usd": 571.62
+    },
+    {
+      "run_id": "vwap_trend_spy_120d",
+      "strategy": "vwap_trend",
+      "symbol": "SPY",
+      "standalone": {
+        "trades": 45,
+        "net_usd": 1638.15,
+        "net_r": 10.96,
+        "net_after_friction_usd": 829.15,
+        "max_drawdown_usd": 1199.09
+      },
+      "trades_considered": 45,
+      "trades_taken": 45,
+      "trades_skipped_by_cap": 0,
+      "taken_net_usd": 829.15
+    }
+  ],
+  "combined": {
+    "trades_considered": 139,
+    "trades_taken": 138,
+    "trades_skipped_by_cap": 1,
+    "wins": 58,
+    "losses": 80,
+    "win_rate": 0.4203,
+    "net_usd": 2516.35,
+    "ending_equity_usd": 3016.35,
+    "max_drawdown_usd": 3014.19,
+    "naive_uncapped_sum_usd": 2946.35
+  },
+  "simplifications": "Equity curve uses realized pnl at exit times only (no mark-to-market of open trades), so max drawdown is the realized-curve drawdown. Daily-strategy trades are timestamped entry-date 09:30 ET / exit-date 16:00 ET. Each trade keeps its own strategy's recorded size; the only portfolio-level constraint is the $300 open-risk cap.",
+  "trade_log": "results/trades_portfolio_combined.csv"
+}
