@@ -1,0 +1,376 @@
+{
+  "id": "orb15_close_spy_120d",
+  "label": "SPY 1m \u00b7 ORB 15-min opening range breakout (no target, close exit)",
+  "strategy": "orb15_close",
+  "strategy_label": "ORB 15-min opening range breakout (no target, close exit)",
+  "symbol": "SPY",
+  "symbol_key": "spy",
+  "data_file": "data/spy_1m_120d.csv",
+  "data_symbol": "SPY (DBEQ.BASIC)",
+  "instrument_type": "equity",
+  "point_value_usd": 1.0,
+  "tick_size": 0.01,
+  "friction_per_unit_usd": 0.04,
+  "window": {
+    "start": "2026-06-22",
+    "end": "2026-10-20"
+  },
+  "trading_days": 84,
+  "trades": 83,
+  "wins": 30,
+  "losses": 53,
+  "win_rate": 0.3614,
+  "net_usd": 489.31,
+  "net_r": 3.299,
+  "starting_balance_usd": 500.0,
+  "ending_equity_usd": 989.31,
+  "max_drawdown_usd": 1554.32,
+  "avg_units": 90.14,
+  "skipped_for_size": 0,
+  "total_friction_usd": 299.28,
+  "net_usd_after_friction": 190.03,
+  "ending_equity_usd_after_friction": 690.03,
+  "equity_curve": [
+    {
+      "date": "start",
+      "equity": 500.0
+    },
+    {
+      "date": "2026-06-22",
+      "equity": 351.8
+    },
+    {
+      "date": "2026-06-23",
+      "equity": 328.63
+    },
+    {
+      "date": "2026-06-24",
+      "equity": 178.64
+    },
+    {
+      "date": "2026-06-25",
+      "equity": 198.89
+    },
+    {
+      "date": "2026-06-26",
+      "equity": 395.45
+    },
+    {
+      "date": "2026-06-29",
+      "equity": 247.97
+    },
+    {
+      "date": "2026-06-30",
+      "equity": 898.02
+    },
+    {
+      "date": "2026-07-01",
+      "equity": 956.26
+    },
+    {
+      "date": "2026-07-02",
+      "equity": 807.74
+    },
+    {
+      "date": "2026-07-06",
+      "equity": 954.35
+    },
+    {
+      "date": "2026-07-07",
+      "equity": 1061.21
+    },
+    {
+      "date": "2026-07-08",
+      "equity": 912.47
+    },
+    {
+      "date": "2026-07-09",
+      "equity": 764.79
+    },
+    {
+      "date": "2026-07-10",
+      "equity": 614.79
+    },
+    {
+      "date": "2026-07-13",
+      "equity": 850.21
+    },
+    {
+      "date": "2026-07-14",
+      "equity": 701.97
+    },
+    {
+      "date": "2026-07-15",
+      "equity": 637.98
+    },
+    {
+      "date": "2026-07-16",
+      "equity": 489.89
+    },
+    {
+      "date": "2026-07-17",
+      "equity": 574.13
+    },
+    {
+      "date": "2026-07-20",
+      "equity": 936.38
+    },
+    {
+      "date": "2026-07-21",
+      "equity": 788.18
+    },
+    {
+      "date": "2026-07-22",
+      "equity": 754.25
+    },
+    {
+      "date": "2026-07-23",
+      "equity": 865.17
+    },
+    {
+      "date": "2026-07-24",
+      "equity": 716.24
+    },
+    {
+      "date": "2026-07-27",
+      "equity": 1027.68
+    },
+    {
+      "date": "2026-07-28",
+      "equity": 878.0
+    },
+    {
+      "date": "2026-07-29",
+      "equity": 729.26
+    },
+    {
+      "date": "2026-07-30",
+      "equity": 580.16
+    },
+    {
+      "date": "2026-07-31",
+      "equity": 431.38
+    },
+    {
+      "date": "2026-08-03",
+      "equity": 768.27
+    },
+    {
+      "date": "2026-08-04",
+      "equity": 1533.74
+    },
+    {
+      "date": "2026-08-05",
+      "equity": 1757.39
+    },
+    {
+      "date": "2026-08-06",
+      "equity": 1608.89
+    },
+    {
+      "date": "2026-08-07",
+      "equity": 1459.65
+    },
+    {
+      "date": "2026-08-10",
+      "equity": 1310.28
+    },
+    {
+      "date": "2026-08-11",
+      "equity": 1523.64
+    },
+    {
+      "date": "2026-08-12",
+      "equity": 1518.36
+    },
+    {
+      "date": "2026-08-13",
+      "equity": 1572.95
+    },
+    {
+      "date": "2026-08-14",
+      "equity": 1423.86
+    },
+    {
+      "date": "2026-08-17",
+      "equity": 1673.36
+    },
+    {
+      "date": "2026-08-18",
+      "equity": 1708.39
+    },
+    {
+      "date": "2026-08-19",
+      "equity": 1559.71
+    },
+    {
+      "date": "2026-08-20",
+      "equity": 1409.98
+    },
+    {
+      "date": "2026-08-21",
+      "equity": 1261.06
+    },
+    {
+      "date": "2026-08-24",
+      "equity": 1261.06
+    },
+    {
+      "date": "2026-08-25",
+      "equity": 1198.69
+    },
+    {
+      "date": "2026-08-26",
+      "equity": 1050.08
+    },
+    {
+      "date": "2026-08-27",
+      "equity": 1150.56
+    },
+    {
+      "date": "2026-08-28",
+      "equity": 1001.13
+    },
+    {
+      "date": "2026-08-31",
+      "equity": 872.34
+    },
+    {
+      "date": "2026-09-01",
+      "equity": 723.18
+    },
+    {
+      "date": "2026-09-02",
+      "equity": 944.31
+    },
+    {
+      "date": "2026-09-03",
+      "equity": 795.74
+    },
+    {
+      "date": "2026-09-04",
+      "equity": 1008.89
+    },
+    {
+      "date": "2026-09-08",
+      "equity": 1082.53
+    },
+    {
+      "date": "2026-09-09",
+      "equity": 932.59
+    },
+    {
+      "date": "2026-09-10",
+      "equity": 783.43
+    },
+    {
+      "date": "2026-09-11",
+      "equity": 634.39
+    },
+    {
+      "date": "2026-09-14",
+      "equity": 484.63
+    },
+    {
+      "date": "2026-09-15",
+      "equity": 651.1
+    },
+    {
+      "date": "2026-09-16",
+      "equity": 501.28
+    },
+    {
+      "date": "2026-09-17",
+      "equity": 352.57
+    },
+    {
+      "date": "2026-09-18",
+      "equity": 203.07
+    },
+    {
+      "date": "2026-09-21",
+      "equity": 1171.67
+    },
+    {
+      "date": "2026-09-22",
+      "equity": 1121.75
+    },
+    {
+      "date": "2026-09-23",
+      "equity": 1614.59
+    },
+    {
+      "date": "2026-09-24",
+      "equity": 1465.24
+    },
+    {
+      "date": "2026-09-25",
+      "equity": 1315.24
+    },
+    {
+      "date": "2026-09-28",
+      "equity": 1166.25
+    },
+    {
+      "date": "2026-09-29",
+      "equity": 1224.0
+    },
+    {
+      "date": "2026-09-30",
+      "equity": 1074.5
+    },
+    {
+      "date": "2026-10-01",
+      "equity": 925.92
+    },
+    {
+      "date": "2026-10-02",
+      "equity": 777.87
+    },
+    {
+      "date": "2026-10-05",
+      "equity": 1218.73
+    },
+    {
+      "date": "2026-10-06",
+      "equity": 1269.77
+    },
+    {
+      "date": "2026-10-07",
+      "equity": 1121.27
+    },
+    {
+      "date": "2026-10-08",
+      "equity": 971.54
+    },
+    {
+      "date": "2026-10-09",
+      "equity": 821.74
+    },
+    {
+      "date": "2026-10-12",
+      "equity": 992.3
+    },
+    {
+      "date": "2026-10-13",
+      "equity": 910.7
+    },
+    {
+      "date": "2026-10-14",
+      "equity": 760.74
+    },
+    {
+      "date": "2026-10-15",
+      "equity": 611.7
+    },
+    {
+      "date": "2026-10-16",
+      "equity": 1138.65
+    },
+    {
+      "date": "2026-10-19",
+      "equity": 989.31
+    }
+  ],
+  "trade_log": "results/trades_orb15_close_spy_120d.csv"
+}
