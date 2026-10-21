@@ -1581,6 +1581,127 @@ def orb15_options_modeled_section() -> str:
     )
 
 
+def orb15_options_real_section() -> str:
+    """ORB-15 options — REAL historical quotes (run_orb15_options_real.py).
+
+    The modeled run's successor: the same 498 frozen trades repriced
+    with REAL NBBO quotes from Databento's OPRA.PILLAR dataset
+    (cbbo-1m). Reads results/orb15_options_real.json (and the modeled
+    JSON for the side-by-side anchors); returns "" when not run.
+    """
+    path = ROOT / "results" / "orb15_options_real.json"
+    if not path.exists():
+        return ""
+    doc = json.loads(path.read_text())
+    modeled_path = ROOT / "results" / "orb15_options_modeled.json"
+    modeled = json.loads(modeled_path.read_text()) \
+        if modeled_path.exists() else None
+
+    def cls(v) -> str:
+        return "pos" if v > 0 else "neg"
+
+    def stats_row(label: str, s: dict, untr) -> str:
+        return (
+            f"<tr><td>{label}</td><td>{s['trades_taken']}</td>"
+            f"<td>{s['gate_skipped']}</td><td>{untr}</td>"
+            f"<td>{s['win_rate']:.1%}</td>"
+            f"<td class='{cls(s['net_pnl_usd'])}'>"
+            f"{signed_money(s['net_pnl_usd'])}</td>"
+            f"<td>{money(s['ending_overlay_usd'])}</td>"
+            f"<td>{money(s['trough_usd'])}</td>"
+            f"<td>{money(s['max_drawdown_usd'])}</td>"
+            f"<td>{signed_money(s['avg_win_usd'])}</td>"
+            f"<td>{signed_money(s['avg_loss_usd'])}</td></tr>")
+
+    def window_block(title: str, wname: str) -> str:
+        w = doc["windows"][wname]
+        s = w["real_quotes"]
+        rows = []
+        if modeled is not None:
+            mw = modeled["windows"][wname]
+            sh = mw["shares_identical_trades"]
+            rows.append(
+                "<tr><td><b>Shares (identical trades)</b></td>"
+                f"<td>{sh['trades']}</td><td>—</td><td>—</td>"
+                f"<td>{sh['win_rate']:.1%}</td>"
+                f"<td class='{cls(sh['net_pnl_after_friction_usd'])}'>"
+                f"{signed_money(sh['net_pnl_after_friction_usd'])}</td>"
+                f"<td>{money(sh['ending_equity_usd'])}</td>"
+                f"<td>{money(sh['trough_usd'])}</td>"
+                f"<td>{money(sh['max_drawdown_usd'])}</td>"
+                f"<td>{signed_money(sh['avg_win_usd'])}</td>"
+                f"<td>{signed_money(sh['avg_loss_usd'])}</td></tr>")
+        rows.append(stats_row("<b>REAL OPRA quotes</b>", s,
+                              s["untradeable"]))
+        if modeled is not None:
+            labels = {
+                "realized": "Modeled (a) Realized IV ×1.00",
+                "realized_low": "Modeled (b) Realized IV ×0.85",
+                "realized_high": "Modeled (c) Realized IV ×1.20",
+                "realized_wide_spread": "Modeled (a) + wide spread",
+            }
+            for key, label in labels.items():
+                a = modeled["windows"][wname]["anchors"].get(key)
+                if a is not None:
+                    rows.append(stats_row(label, a, "—"))
+        dd = w["decay_diagnostic_real"]
+        r = w["real_vs_modeled_a_entry_ask"]
+        return (
+            f"<h3>{title}</h3>"
+            "<div class='tblwrap'><table><thead><tr>"
+            "<th>Expression</th><th>Trades taken</th>"
+            "<th>Gate-skipped</th><th>Untradeable</th><th>Win rate</th>"
+            "<th>Net P&amp;L</th><th>End overlay</th><th>Trough</th>"
+            "<th>Max DD</th><th>Avg win</th><th>Avg loss</th>"
+            f"</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+            f"<p class='muted'>Real-vs-modeled entry ask (n={r['n']}): "
+            f"the REAL ask was typically <b>lower</b> than the "
+            f"Black-Scholes (a) estimate — median ratio "
+            f"<b>{r['median_ratio']:.2f}</b> (p25 {r['p25_ratio']:.2f}, "
+            f"p75 {r['p75_ratio']:.2f}, mean {r['mean_ratio']:.2f}). "
+            f"The model's morning entry premiums were too dear, which "
+            f"is why the modeled central case understated this variant "
+            f"so heavily. Decay diagnostic (real quotes): of the "
+            f"trades that WON in shares, <b>"
+            f"{dd['shares_winners_that_lost_in_options']} of "
+            f"{dd['shares_winners']}</b> LOST in options; of the "
+            f"shares losers, {dd['shares_losers_that_won_in_options']} "
+            f"of {dd['shares_losers']} won in options.</p>")
+
+    full = doc["windows"]["full_24mo"]["real_quotes"]
+    cost = doc["cost"]
+    return (
+        "<h2>ORB-15 options — REAL historical quotes (OPRA)</h2>"
+        "<p class='muted'><b>These premiums actually existed.</b> "
+        "The same 498 frozen ORB-15 trades, each repriced as the "
+        "options variant would trade it (same-day expiry, nearest $1 "
+        "strike, exactly 1 contract, $2.50 premium gate on the REAL "
+        "ask) using real consolidated NBBO quotes from Databento's "
+        "OPRA.PILLAR dataset (cbbo-1m: best bid/offer sampled at "
+        "1-minute intervals). Buy at the real ask of the entry "
+        "minute, sell at the real bid of the exit minute ($500 "
+        "overlay, sequential). Two honest caveats: a 1-minute "
+        "sampled quote is not a guaranteed fill — real fills can be "
+        "worse — and Databento flags 2025-10-22 as a degraded-data "
+        "day (one of the 498 trades falls on it). Quote matching was "
+        "clean: <b>0 untradeable trades, 0 strike substitutions, and "
+        "no trade needed the ±2-minute fallback</b>. Total data cost "
+        f"for this rerun: <b>${cost['total_quoted_usd']:.2f}</b>. "
+        "The Alpaca options paper forward test remains the arbiter. "
+        "Full record: results/orb15_options_real.json "
+        "(harness: run_orb15_options_real.py; raw quotes stay "
+        "local).</p>"
+        + window_block("Full 24 months (2024-10-21 → 2026-10-19)",
+                       "full_24mo")
+        + window_block("Last 120 trading days (2026-04-29 → "
+                       "2026-10-19)", "last_120d")
+        + f"<p class='muted'>Extremes (24mo, real quotes): best "
+          f"trade {full['best_trade']['date']} "
+          f"{signed_money(full['best_trade']['options_pnl'])}; worst "
+          f"trade {full['worst_trade']['date']} "
+          f"{signed_money(full['worst_trade']['options_pnl'])}.</p>")
+
+
 def main() -> int:
     summary = json.loads((ROOT / "results" / "summary.json").read_text())
     runs = {r["id"]: r for r in summary["runs"]}
@@ -1703,6 +1824,8 @@ def main() -> int:
   {orb15_mes_section()}
 
   {orb15_options_modeled_section()}
+
+  {orb15_options_real_section()}
 
   <div class="panel">
     <h2 style="margin-top:0">Broker: Tradovate (demo first)</h2>
