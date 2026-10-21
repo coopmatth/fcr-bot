@@ -1,0 +1,1037 @@
+{
+ "tape": "data/spy_1m_polygon.csv",
+ "backtest_log": "results/trades_orb15_spy_poly.csv",
+ "days_replayed": [
+  "2024-10-21",
+  "2024-10-22",
+  "2024-10-23",
+  "2024-10-24",
+  "2024-10-25",
+  "2024-10-28",
+  "2024-10-29",
+  "2024-10-30",
+  "2024-10-31",
+  "2024-11-01",
+  "2024-11-04",
+  "2024-11-05",
+  "2024-11-06",
+  "2024-11-07",
+  "2024-11-08",
+  "2024-11-11",
+  "2024-11-12",
+  "2024-11-13",
+  "2024-11-14",
+  "2024-11-15",
+  "2024-11-27",
+  "2025-02-21",
+  "2025-07-18",
+  "2026-01-06",
+  "2026-05-05"
+ ],
+ "decision_fields_compared": 125,
+ "decision_matches": 125,
+ "decision_match_rate": 1.0,
+ "divergence_explanation": "Decisions (trade day, entry time, direction, shares, exit reason) must match exactly \u2014 the runner's signals come from the same ORBStrategy class the backtest ran. Exit PRICES differ by construction: the backtest fills at the exact stop/target level (or the 15:55 open); the runner market-fills at the deciding bar's close. Entry prices match in replay because the simulated market price at the signal bar is its close.",
+ "days": [
+  {
+   "date": "2024-10-21",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:48",
+     "backtest": "09:48",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 254,
+     "backtest": 254,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "STOP",
+     "backtest": "STOP",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 584.33,
+    "entry_runner_fill": 584.33,
+    "exit_backtest_level": 583.74,
+    "exit_runner_fill": 583.49,
+    "backtest_pnl_usd": -149.86
+   }
+  },
+  {
+   "date": "2024-10-22",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:54",
+     "backtest": "09:54",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 157,
+     "backtest": 157,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 581.33,
+    "entry_runner_fill": 581.33,
+    "exit_backtest_level": 583.23,
+    "exit_runner_fill": 583.2301,
+    "backtest_pnl_usd": 298.3
+   }
+  },
+  {
+   "date": "2024-10-23",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "10:04",
+     "backtest": "10:04",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 168,
+     "backtest": 168,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 580.82,
+    "entry_runner_fill": 580.82,
+    "exit_backtest_level": 579.0428,
+    "exit_runner_fill": 579.33,
+    "backtest_pnl_usd": 298.57
+   }
+  },
+  {
+   "date": "2024-10-24",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:45",
+     "backtest": "09:45",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 107,
+     "backtest": 107,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "EOD_FLATTEN",
+     "backtest": "EOD_FLATTEN",
+     "match": true
+    }
+   },
+   "notes": [
+    "backtest flattens at the 15:55 bar's OPEN; the runner's market order fills at that bar's close (expected)"
+   ],
+   "prices": {
+    "entry_backtest": 578.66,
+    "entry_runner_fill": 578.66,
+    "exit_backtest_level": 579.59,
+    "exit_runner_fill": 579.58,
+    "backtest_pnl_usd": -99.51
+   }
+  },
+  {
+   "date": "2024-10-25",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:45",
+     "backtest": "09:45",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 119,
+     "backtest": 119,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "STOP",
+     "backtest": "STOP",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 582.73,
+    "entry_runner_fill": 582.73,
+    "exit_backtest_level": 581.47,
+    "exit_runner_fill": 581.25,
+    "backtest_pnl_usd": -149.94
+   }
+  },
+  {
+   "date": "2024-10-28",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:50",
+     "backtest": "09:50",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 130,
+     "backtest": 130,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "EOD_FLATTEN",
+     "backtest": "EOD_FLATTEN",
+     "match": true
+    }
+   },
+   "notes": [
+    "backtest flattens at the 15:55 bar's OPEN; the runner's market order fills at that bar's close (expected)"
+   ],
+   "prices": {
+    "entry_backtest": 581.56,
+    "entry_runner_fill": 581.56,
+    "exit_backtest_level": 581.11,
+    "exit_runner_fill": 580.62,
+    "backtest_pnl_usd": 58.5
+   }
+  },
+  {
+   "date": "2024-10-29",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:57",
+     "backtest": "09:57",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 94,
+     "backtest": 94,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "EOD_FLATTEN",
+     "backtest": "EOD_FLATTEN",
+     "match": true
+    }
+   },
+   "notes": [
+    "backtest flattens at the 15:55 bar's OPEN; the runner's market order fills at that bar's close (expected)"
+   ],
+   "prices": {
+    "entry_backtest": 580.01,
+    "entry_runner_fill": 580.01,
+    "exit_backtest_level": 581.82,
+    "exit_runner_fill": 581.77,
+    "backtest_pnl_usd": 170.14
+   }
+  },
+  {
+   "date": "2024-10-30",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:56",
+     "backtest": "09:56",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 60,
+     "backtest": 60,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "EOD_FLATTEN",
+     "backtest": "EOD_FLATTEN",
+     "match": true
+    }
+   },
+   "notes": [
+    "backtest flattens at the 15:55 bar's OPEN; the runner's market order fills at that bar's close (expected)"
+   ],
+   "prices": {
+    "entry_backtest": 581.75,
+    "entry_runner_fill": 581.75,
+    "exit_backtest_level": 580.08,
+    "exit_runner_fill": 579.54,
+    "backtest_pnl_usd": -100.2
+   }
+  },
+  {
+   "date": "2024-10-31",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:47",
+     "backtest": "09:47",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 100,
+     "backtest": 100,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 574.14,
+    "entry_runner_fill": 574.14,
+    "exit_backtest_level": 571.16,
+    "exit_runner_fill": 571.38,
+    "backtest_pnl_usd": 298.0
+   }
+  },
+  {
+   "date": "2024-11-01",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:49",
+     "backtest": "09:49",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 62,
+     "backtest": 62,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "STOP",
+     "backtest": "STOP",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 573.07,
+    "entry_runner_fill": 573.07,
+    "exit_backtest_level": 570.68,
+    "exit_runner_fill": 570.765,
+    "backtest_pnl_usd": -148.18
+   }
+  },
+  {
+   "date": "2024-11-04",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "10:01",
+     "backtest": "10:01",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 66,
+     "backtest": 66,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "STOP",
+     "backtest": "STOP",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 571.5401,
+    "entry_runner_fill": 571.5401,
+    "exit_backtest_level": 569.27,
+    "exit_runner_fill": 569.2,
+    "backtest_pnl_usd": -149.83
+   }
+  },
+  {
+   "date": "2024-11-05",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:48",
+     "backtest": "09:48",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 66,
+     "backtest": 66,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "EOD_FLATTEN",
+     "backtest": "EOD_FLATTEN",
+     "match": true
+    }
+   },
+   "notes": [
+    "backtest flattens at the 15:55 bar's OPEN; the runner's market order fills at that bar's close (expected)"
+   ],
+   "prices": {
+    "entry_backtest": 572.77,
+    "entry_runner_fill": 572.77,
+    "exit_backtest_level": 575.93,
+    "exit_runner_fill": 576.07,
+    "backtest_pnl_usd": 208.56
+   }
+  },
+  {
+   "date": "2024-11-06",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:46",
+     "backtest": "09:46",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 62,
+     "backtest": 62,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "STOP",
+     "backtest": "STOP",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 587.0201,
+    "entry_runner_fill": 587.0201,
+    "exit_backtest_level": 589.43,
+    "exit_runner_fill": 589.37,
+    "backtest_pnl_usd": -149.41
+   }
+  },
+  {
+   "date": "2024-11-07",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:52",
+     "backtest": "09:52",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 176,
+     "backtest": 176,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 593.85,
+    "entry_runner_fill": 593.85,
+    "exit_backtest_level": 595.5502,
+    "exit_runner_fill": 595.465,
+    "backtest_pnl_usd": 299.24
+   }
+  },
+  {
+   "date": "2024-11-08",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:47",
+     "backtest": "09:47",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 212,
+     "backtest": 212,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 596.87,
+    "entry_runner_fill": 596.87,
+    "exit_backtest_level": 598.28,
+    "exit_runner_fill": 598.2619,
+    "backtest_pnl_usd": 298.92
+   }
+  },
+  {
+   "date": "2024-11-11",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:45",
+     "backtest": "09:45",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 143,
+     "backtest": 143,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 599.125,
+    "entry_runner_fill": 599.125,
+    "exit_backtest_level": 597.035,
+    "exit_runner_fill": 597.115,
+    "backtest_pnl_usd": 298.87
+   }
+  },
+  {
+   "date": "2024-11-12",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "10:03",
+     "backtest": "10:03",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 142,
+     "backtest": 142,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 598.2401,
+    "entry_runner_fill": 598.2401,
+    "exit_backtest_level": 596.1403,
+    "exit_runner_fill": 596.13,
+    "backtest_pnl_usd": 298.17
+   }
+  },
+  {
+   "date": "2024-11-13",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:49",
+     "backtest": "09:49",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 155,
+     "backtest": 155,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "STOP",
+     "backtest": "STOP",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 596.753,
+    "entry_runner_fill": 596.753,
+    "exit_backtest_level": 597.72,
+    "exit_runner_fill": 597.85,
+    "backtest_pnl_usd": -149.88
+   }
+  },
+  {
+   "date": "2024-11-14",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "10:18",
+     "backtest": "10:18",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 66,
+     "backtest": 66,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "EOD_FLATTEN",
+     "backtest": "EOD_FLATTEN",
+     "match": true
+    }
+   },
+   "notes": [
+    "backtest flattens at the 15:55 bar's OPEN; the runner's market order fills at that bar's close (expected)"
+   ],
+   "prices": {
+    "entry_backtest": 595.57,
+    "entry_runner_fill": 595.57,
+    "exit_backtest_level": 593.32,
+    "exit_runner_fill": 593.12,
+    "backtest_pnl_usd": 148.5
+   }
+  },
+  {
+   "date": "2024-11-15",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:56",
+     "backtest": "09:56",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 115,
+     "backtest": 115,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 588.9,
+    "entry_runner_fill": 588.9,
+    "exit_backtest_level": 586.3,
+    "exit_runner_fill": 586.505,
+    "backtest_pnl_usd": 299.0
+   }
+  },
+  {
+   "date": "2024-11-27",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "10:01",
+     "backtest": "10:01",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 163,
+     "backtest": 163,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 599.93,
+    "entry_runner_fill": 599.93,
+    "exit_backtest_level": 598.09,
+    "exit_runner_fill": 598.15,
+    "backtest_pnl_usd": 299.92
+   }
+  },
+  {
+   "date": "2025-02-21",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:49",
+     "backtest": "09:49",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 98,
+     "backtest": 98,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 608.77,
+    "entry_runner_fill": 608.77,
+    "exit_backtest_level": 605.71,
+    "exit_runner_fill": 605.7,
+    "backtest_pnl_usd": 299.88
+   }
+  },
+  {
+   "date": "2025-07-18",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "10:04",
+     "backtest": "10:04",
+     "match": true
+    },
+    "direction": {
+     "runner": "short",
+     "backtest": "short",
+     "match": true
+    },
+    "shares": {
+     "runner": 158,
+     "backtest": 158,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 628.5209,
+    "entry_runner_fill": 628.5209,
+    "exit_backtest_level": 626.6227,
+    "exit_runner_fill": 626.8,
+    "backtest_pnl_usd": 299.92
+   }
+  },
+  {
+   "date": "2026-01-06",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:45",
+     "backtest": "09:45",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 150,
+     "backtest": 150,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 688.78,
+    "entry_runner_fill": 688.78,
+    "exit_backtest_level": 690.78,
+    "exit_runner_fill": 690.785,
+    "backtest_pnl_usd": 300.0
+   }
+  },
+  {
+   "date": "2026-05-05",
+   "fields": {
+    "trade_taken": {
+     "runner": true,
+     "backtest": true,
+     "match": true
+    },
+    "entry_time": {
+     "runner": "09:45",
+     "backtest": "09:45",
+     "match": true
+    },
+    "direction": {
+     "runner": "long",
+     "backtest": "long",
+     "match": true
+    },
+    "shares": {
+     "runner": 147,
+     "backtest": 147,
+     "match": true
+    },
+    "exit_reason": {
+     "runner": "TARGET",
+     "backtest": "TARGET",
+     "match": true
+    }
+   },
+   "notes": [
+    "exit fill = deciding bar's close; backtest fill = the exact stop/target level (bar-close vs level semantics, expected)"
+   ],
+   "prices": {
+    "entry_backtest": 722.51,
+    "entry_runner_fill": 722.51,
+    "exit_backtest_level": 724.5504,
+    "exit_runner_fill": 724.55,
+    "backtest_pnl_usd": 299.94
+   }
+  }
+ ]
+}
