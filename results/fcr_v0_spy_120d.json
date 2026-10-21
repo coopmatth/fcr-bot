@@ -1,0 +1,33 @@
+{
+  "id": "fcr_v0_spy_120d",
+  "label": "SPY 1m \u00b7 FCR V0 baseline",
+  "strategy": "fcr_v0",
+  "strategy_label": "First Candle Rule V0 baseline (reference)",
+  "symbol": "SPY",
+  "symbol_key": "spy",
+  "data_file": "data/spy_1m_120d.csv",
+  "data_symbol": "SPY (DBEQ.BASIC)",
+  "instrument_type": "equity",
+  "point_value_usd": 1.0,
+  "friction_per_unit_usd": 0.04,
+  "window": {
+    "start": "2026-06-22",
+    "end": "2026-10-20"
+  },
+  "trading_days": 84,
+  "trades": 26,
+  "wins": 9,
+  "losses": 17,
+  "win_rate": 0.3462,
+  "net_usd": 1496.26,
+  "net_r": 10.0,
+  "starting_balance_usd": 500.0,
+  "ending_equity_usd": 1996.25,
+  "max_drawdown_usd": 1198.29,
+  "avg_units": 475.62,
+  "skipped_for_size": 0,
+  "total_friction_usd": 494.64,
+  "net_usd_after_friction": 1001.62,
+  "ending_equity_usd_after_friction": 1501.62,
+  "trade_log": "results/trades_fcr_v0_spy_120d.csv"
+}
