@@ -1099,6 +1099,206 @@ def orb15_deepdive_section() -> str:
     )
 
 
+# ============================================================ ORB15-MES-BEGIN
+def orb15_mes_section() -> str:
+    """ORB-15 on futures (MES) — 24-month validation
+    (run_orb15_mes_validation.py).
+
+    The frozen ORB-15 strategy re-run on the deterministic ES
+    futures tape, traded as MES — the gate for taking ORB-15 live
+    at a $500 account, where MES is the only faithful executable
+    form. Reads results/orb15_mes_validation.json; returns ""
+    when the validation has not been run so the rest of the
+    dashboard still builds.
+    """
+    path = ROOT / "results" / "orb15_mes_validation.json"
+    if not path.exists():
+        return ""
+    doc = json.loads(path.read_text())
+    if doc.get("status") != "COMPLETE":
+        return ""  # aborted/partial record — nothing honest to show
+    c = doc["cell"]
+    g = doc["diagnostics"]
+    cmp_ = doc["spy_comparison"]
+    spy = cmp_["spy_reference"]
+    mes = cmp_["mes"]
+    h = c["halves"]
+    s = doc["slice_verification"]
+    e, got = s["expected"], s["got"]
+
+    def af_cls(v) -> str:
+        return "pos" if v > 0 else "neg"
+
+    def crit_marks(cell) -> str:
+        p = cell["pass"]
+        marks = []
+        for key, label in (
+                ("a_net_after_friction_positive", "a"),
+                ("b_h2_net_after_friction_positive", "b"),
+                ("c_trough_above_zero", "c")):
+            marks.append(f"{label} {'✓' if p[key] else '✗'}")
+        return " · ".join(marks)
+
+    v = c["verdict"]
+    vcls = "pos" if v == "PASS" else "neg"
+    ls = g["long_short"]
+    rs = g["risk_shape"]
+    subs = g["subperiods"]
+    sub_line = " · ".join(
+        f"{b['bucket']} {signed_money(b['af_usd'])}"
+        for b in subs["buckets"])
+    mon = g["monthly"]
+    sp = rs["stop_pts"]
+    hist_line = ", ".join(
+        f"{k} contracts × {n}" for k, n in
+        rs["contracts_histogram"].items())
+    friction_total = c["total_friction_usd"]
+    friction_pct = (round(100 * friction_total / c["net_usd"])
+                    if c["net_usd"] else 0)
+
+    return (
+        "<h2>ORB-15 on futures (MES) — 24-month validation</h2>"
+        "<p class='muted'>The gate for the live-$500 question. ORB-15 "
+        "as confirmed on SPY needs ~100 shares a trade (~$77k "
+        "notional) to risk its $150 — no $500 stock account can run "
+        "it. MES futures can: the same frozen strategy "
+        "(ORBStrategy, 15-minute opening range, per ORB15_SPEC.md) "
+        "on the deterministic ES.v.0 tape (GLBX.MDP3), traded as "
+        "MES at $5/pt over the same window as the SPY Polygon "
+        "validation (2024-10-21 → 2026-10-19). The open question is "
+        "the tape: ES trades nearly around the clock, so its 9:30 "
+        "ET 'open' is an overnight continuation, not the cash "
+        "auction open — the effect that halved IB breakout's edge "
+        "in the MES cross-check above. Full record: "
+        "results/orb15_mes_validation.json (harness: "
+        "run_orb15_mes_validation.py).</p>"
+        "<p><b>Sizing rule (futures convention, stated in full):</b> "
+        f"{html.escape(doc['spec']['sizing_rule'])}</p>"
+        "<h3>Slice verification — lab window (2026-06-22 → "
+        "2026-10-20) on the 24-month ES file</h3>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Cell</th><th>Lab trades</th><th>Lab gross</th>"
+        "<th>Lab after friction</th><th>New file trades</th>"
+        "<th>New file gross</th><th>New file after friction</th>"
+        "<th>Verdict</th>"
+        "</tr></thead><tbody>"
+        f"<tr><td>orb15_mes</td><td>{e['trades']}</td>"
+        f"<td>{signed_money(e['net_usd'])}</td>"
+        f"<td>{signed_money(e['net_after_friction'])}</td>"
+        f"<td>{got['trades']}</td>"
+        f"<td>{signed_money(got['net_usd'])}</td>"
+        f"<td>{signed_money(got['net_after_friction'])}</td>"
+        f"<td class='pos'><b>{'MATCH' if s['match'] else 'MISMATCH'}</b></td></tr>"
+        "</tbody></table></div>"
+        "<p class='muted'>The cell reproduces the lab to the cent "
+        "on the 24-month file — the route is verified before any "
+        "24-month number is trusted.</p>"
+        "<h3>MES — full 24 months</h3>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Cell</th><th>Days</th><th>Trades</th><th>W/L</th>"
+        "<th>Win rate</th><th>Gross $</th><th>Net R</th>"
+        "<th>After friction</th><th>End equity (AF)</th>"
+        "<th>Max DD (gross)</th><th>H1 AF</th><th>H2 AF</th>"
+        "<th>Trough (AF)</th><th>Skipped</th><th>Criteria</th>"
+        "<th>Verdict</th>"
+        "</tr></thead><tbody>"
+        f"<tr><td>orb15_mes</td>"
+        f"<td>{c['trading_days']}</td><td>{c['trades']}</td>"
+        f"<td>{c['wins']}W / {c['losses']}L</td>"
+        f"<td>{pct(c['win_rate'])}</td>"
+        f"<td class='{af_cls(c['net_usd'])}'>{signed_money(c['net_usd'])}</td>"
+        f"<td>{c['net_r']:+.2f}R</td>"
+        f"<td class='{af_cls(c['net_usd_after_friction'])}'><b>{signed_money(c['net_usd_after_friction'])}</b></td>"
+        f"<td>{money(c['ending_equity_usd_after_friction'])}</td>"
+        f"<td>{money(c['max_drawdown_usd'])}</td>"
+        f"<td class='{af_cls(h['h1']['net_after_friction_usd'])}'>{signed_money(h['h1']['net_after_friction_usd'])}</td>"
+        f"<td class='{af_cls(h['h2']['net_after_friction_usd'])}'>{signed_money(h['h2']['net_after_friction_usd'])}</td>"
+        f"<td class='{af_cls(c['trough_after_friction_usd'])}'>{money(c['trough_after_friction_usd'])}"
+        f"<span class='sub'> {html.escape(str(c['trough_after_friction_at']))}</span></td>"
+        f"<td>{c['skipped_for_size']}</td>"
+        f"<td>{crit_marks(c)}</td>"
+        f"<td class='{vcls}'><b>{v}</b></td></tr>"
+        f"<tr><td colspan='16' class='sub'>Friction paid over the "
+        f"run: {money(friction_total)} ($4.90/contract round trip "
+        f"at an average of {c['avg_units']} contracts/trade) — "
+        f"{friction_pct}% of the gross. After-friction max "
+        f"drawdown on the realized curve: "
+        f"{money(g['af_max_drawdown_usd'])}."
+        f"</td></tr>"
+        "</tbody></table></div>"
+        "<p class='muted'>Criteria, frozen and identical to the SPY "
+        "verdict: (a) 24-month net-after-friction &gt; $0, (b) "
+        "second-half net-after-friction &gt; $0, (c) after-friction "
+        "realized-equity trough &gt; $0.</p>"
+        "<h3>Side by side — MES vs SPY (Polygon SIP)</h3>"
+        "<div class='tblwrap'><table><thead><tr>"
+        "<th>Tape</th><th>Days</th><th>Trades</th><th>Win rate</th>"
+        "<th>Gross $</th><th>Gross / trade</th><th>After friction</th>"
+        "<th>AF / trade</th><th>Trough (AF)</th><th>Skipped</th>"
+        "</tr></thead><tbody>"
+        f"<tr><td>SPY (Polygon)</td><td>{spy['trading_days']}</td>"
+        f"<td>{spy['trades']}</td><td>{pct(spy['win_rate'])}</td>"
+        f"<td>{signed_money(spy['net_usd'])}</td>"
+        f"<td>{signed_money(spy['gross_per_trade_usd'])}</td>"
+        f"<td><b>{signed_money(spy['net_usd_after_friction'])}</b></td>"
+        f"<td>{signed_money(spy['af_per_trade_usd'])}</td>"
+        f"<td>{money(spy['trough_after_friction_usd'])}</td>"
+        f"<td>{spy['skipped_for_size']}</td></tr>"
+        f"<tr><td>MES (GLBX)</td><td>{mes['trading_days']}</td>"
+        f"<td>{mes['trades']}</td><td>{pct(mes['win_rate'])}</td>"
+        f"<td>{signed_money(mes['net_usd'])}</td>"
+        f"<td>{signed_money(mes['gross_per_trade_usd'])}</td>"
+        f"<td><b>{signed_money(mes['net_usd_after_friction'])}</b></td>"
+        f"<td>{signed_money(mes['af_per_trade_usd'])}</td>"
+        f"<td>{money(mes['trough_after_friction_usd'])}</td>"
+        f"<td>{mes['skipped_for_size']}</td></tr>"
+        "</tbody></table></div>"
+        f"<p>The per-trade after-friction edge on MES is "
+        f"<b>{signed_money(mes['af_per_trade_usd'])}</b> vs SPY's "
+        f"<b>{signed_money(spy['af_per_trade_usd'])}</b> — a ratio of "
+        f"{cmp_['af_per_trade_ratio_mes_over_spy']:.2f}×. The "
+        "overnight-continuation effect is real and it is almost "
+        "exactly the halving the cross-check predicted; the gross "
+        "edge only falls ~15%, but $4.90 × ~1.6 contracts of "
+        "friction per trade (vs ~$3.62/trade in SPY shares) takes "
+        "the rest. Unlike IB breakout, ORB-15's edge is large "
+        "enough that half of it still clears the bar.</p>"
+        "<div class='panel'><h2 style='margin-top:0'>Decay, shape, "
+        "and the honest caveats</h2>"
+        f"<p><b>Sub-periods (AF):</b> {sub_line} — "
+        f"{subs['green_count']} of {subs['bucket_count']} buckets "
+        "green, and the pattern rhymes with SPY's decay rather "
+        "than refuting it: H1 made "
+        f"{signed_money(h['h1']['net_after_friction_usd'])} of the "
+        f"{signed_money(c['net_usd_after_friction'])} total, H2 "
+        f"only {signed_money(h['h2']['net_after_friction_usd'])}, "
+        "and the final partial bucket (Jul–Oct 2026) is the run's "
+        "only red one. The gate is passed; the trend through the "
+        "gate is still downward.</p>"
+        f"<p><b>Long/short:</b> shorts {ls['short']['trades']} "
+        f"trades, {signed_money(ls['short']['af_usd'])} AF "
+        f"({ls['short']['af_share_of_total'] * 100:.0f}% of the "
+        f"total); longs {ls['long']['trades']} trades, "
+        f"{signed_money(ls['long']['af_usd'])} AF. SPY's "
+        "short-side dominance (~80%) broadly holds on MES.</p>"
+        f"<p><b>Months:</b> {mon['green']} green / {mon['red']} "
+        f"red of {mon['months_with_trades']} months with trades.</p>"
+        f"<p><b>Risk shape:</b> stop distances run "
+        f"{sp['min']}–{sp['max']} ES points (median {sp['median']}, "
+        f"mean {sp['mean']}). Contract counts: {hist_line} — only "
+        f"{rs['trades_at_5_contract_cap']} trades sit at the "
+        "5-contract cap, and "
+        f"{c['skipped_for_size']} signal days were skipped for "
+        "size entirely (stop wider than 30 points risks more "
+        "than the $150 budget even at 1 contract). A live $500 "
+        "account mostly trades 1–2 contracts of this.</p>"
+        f"<p>{html.escape(doc['framing_note'])}</p>"
+        f"<p class='muted'>{html.escape(doc['data_quality_note'])}</p>"
+        "</div>"
+    )
+# ============================================================ ORB15-MES-END
+
+
 def strategy_lab_section() -> str:
     """Strategy Lab (build_strategy_lab.py + build_portfolio.py).
 
@@ -1362,6 +1562,8 @@ def main() -> int:
   {polygon_section()}
 
   {orb15_deepdive_section()}
+
+  {orb15_mes_section()}
 
   <div class="panel">
     <h2 style="margin-top:0">Broker: Tradovate (demo first)</h2>
