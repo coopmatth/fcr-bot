@@ -624,7 +624,8 @@ The forward-test runner for the frozen ORB-15 spec lives in the
 Linux box as `orb15-alpaca-paper.service` against the Alpaca
 **paper** account (keys in the box's `/home/discord/fcr-bot/.env.alpaca`,
 `chmod 600`, never in the repo), with `ALPACA_RUNNER_ENABLED=true`
-since 2026-10-21. Everything is covered by mocked tests (140,
+since 2026-10-21. Everything is covered by mocked tests (the
+alpaca test files: client, runner, and the hostile fault suite,
 including the live-frontier gate tests below) plus a dry-run
 replay.
 
@@ -717,6 +718,69 @@ excluded from forward-test scoring** (annotated in the box's
 original events are kept). The overlay accounting was reset by
 an explicit, recorded state adjustment, so **the scored forward
 test starts Thu 2026-10-22 at exactly $500.00**.
+
+**Hardening pass (2026-10-21, after the hostile audit).** Before
+the scored start, the runner was hardened against the audit in
+`docs/alpaca_runner_audit.md` — the two High findings plus the
+cheap Mediums, all proven by fault-injection tests that were
+flipped to assert the safe behavior (`tests/test_alpaca_faults.py`,
+`test_fixed_*`):
+
+- **F1 orphan fills.** Every order carries a deterministic
+  `client_order_id`; a submission whose outcome is unknown is
+  recovered by lookup (`GET /v2/orders:by_client_order_id`)
+  before anything is concluded. Reconciliation now FLATTENS a
+  holding the state file cannot explain (`orphan_flattened`,
+  full detail logged) and halts entries for the day — an orphan
+  is never left riding and never adopted on a guess.
+- **F5 sizing caps.** Hard caps in one place
+  (`MAX_SHARES = 200`, `MAX_NOTIONAL_USD = $150,000`): a binding
+  cap logs `size_capped` (spec vs actual) and the trade books at
+  its actual size. Measured over the backtest's 498 trade days,
+  11 (2.2%) would have clipped; the largest is 2024-12-05
+  (300 sh / $182,361 → 200 sh / $121,574). The strategy's
+  decisions are unchanged — the replay proof still matches
+  125/125 — but 2 of its 25 sampled days (2024-10-21, 2024-11-08)
+  now book at the capped 200 shares.
+- **F2/F4 partial fills.** `cancel_order` exists;
+  `partially_filled` is a live state until terminal or the poll
+  deadline, then the remainder is canceled and the filled qty
+  booked. After a partial EXIT fill, the remainder stays under
+  stop/target management for the rest of the day.
+- **F3 exit failures (contained).** Exits go through one chain:
+  market order → `close_position` once → log
+  `exit_failure_critical` and keep managing/retrying on
+  subsequent bars. An exit failure can no longer kill the
+  process; entries may still fail the day, by design.
+- **F6 market calendar.** Day start consults `/v2/calendar`:
+  non-trading day = clean skip; early close moves the flatten
+  to `min(15:55, close − 5 min)`, on the day-start record; a
+  calendar failure falls back to the default schedule and logs
+  `calendar_unavailable` (never silent).
+- **F7 single instance.** A non-blocking flock on
+  `runner.lock` in the state dir, taken before any API use; a
+  second instance logs `runner_lock_refused` and exits cleanly.
+- **F8 corrupt state.** The file is quarantined
+  (`runner_state.corrupt-<ts>`), `state_quarantined` is logged,
+  and the runner starts HALTED pending reconciliation (flat →
+  stays halted; holding → the F1 orphan path). No crash loop.
+- **F11 flatten backstop (contained).** A watchdog thread in
+  `serve()` checks the wall clock: position open + past the
+  day's flatten time + no bar processed for over 3 minutes →
+  flatten through the normal exit path, logged as
+  `flatten_backstop_fired`.
+- **F13 redirects.** The HTTP transport refuses redirects
+  outright, so credential headers can never follow a 302
+  off-host.
+
+Deliberately NOT in this pass (they alter strategy semantics
+and need a separate call): F10 range-window gap integrity, F14
+fill-slippage guard, F9 bar ordering, F12 pagination bound, F15
+module duplication — all still documented as OPEN in the audit.
+The audit's no-alerting amplifier also stands: failures are
+contained and loudly logged, but they still terminate in the
+event log, so the service gets a daily health check during the
+forward test.
 
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
