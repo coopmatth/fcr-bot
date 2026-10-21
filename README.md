@@ -402,6 +402,54 @@ than the gold FCR pass, which sits on deterministic futures data.
 The sweep-on-gold result is dead after friction. Nothing here
 changes the paper-only status of the project.
 
+### MES cross-check (2026-10-21)
+
+The two credible SPY cells — IB breakout (the one clean PASS) and
+VWAP trend (STABLE, failed only on survivability) — both rest on
+the non-reproducible DBEQ.BASIC tape. The cross-check re-runs them
+on MES: the same index on the ES.v.0 tape (GLBX.MDP3,
+deterministic), traded as MES at $5/pt with the lab's
+$4.90/contract friction, over the same 24 months. Harness:
+`run_crosscheck_mes.py`; full record: `results/crosscheck_mes.json`.
+
+**Slice verification: exact.** Restricted to the lab window on
+the new 24-month ES file, both cells reproduce the lab to the
+cent (IB breakout MES: 64 trades, +$728.77 / +$224.07 AF; VWAP
+trend MES: 47 trades, −$1,313.94 / −$2,210.64 AF) — the
+deterministic tape behaves exactly as the SPY tape did not.
+
+**Full 24 months on MES (515 trading days): both FAIL.**
+
+| Cell | Trades | W/L | Gross $ | Net R | After friction | H1 AF | H2 AF | Trough (AF) | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| IB breakout MES | 371 | 162/209 | +$3,040.01 | +28.70R | **−$267.49** | −$396.84 | +$129.35 | −$1,441.93 | FAIL (a, c) |
+| VWAP trend MES | 272 | 106/166 | +$5,088.63 | +43.13R | **−$105.37** | +$780.70 | −$886.07 | −$14.16 | FAIL (a, b, c) |
+
+Both strategies are positive *gross* on MES over two years — the
+directional patterns are not SPY-feed artifacts — but at micro
+size the friction bill ($3,307.50 for IB breakout, $5,194.00 for
+VWAP trend at $4.90/contract) exceeds the gross edge, so both end
+negative after costs, and both realized-equity curves spent time
+underwater. VWAP trend misses all three criteria narrowly
+(−$105.37 overall, trough −$14.16); IB breakout's recent half is
+positive (+$129.35) but its first half dug a −$1,441.93 trough.
+The mini-portfolio was **not built**: the frozen rule builds it
+only if both cells pass.
+
+**Framing.** MES and SPY are the same index, but ES futures
+trade nearly around the clock, so the 9:30 ET "open" for MES is a
+continuation of overnight trading rather than SPY's auction open
+— a strategy keyed to the cash open can legitimately behave
+differently on the two, so a MES failure weakens but does not by
+itself falsify the SPY result, and a MES pass would have been
+strong feed-independent confirmation. What the cross-check does
+establish: on a tape nobody has to take on faith, both patterns
+show a genuine gross edge over 24 months — and at $150 risk /
+≤5 micro contracts, that edge is smaller than the cost of
+harvesting it. Data note: the GLBX degraded-day flags
+(2025-09-17, 2025-09-24, 2025-11-28) apply dataset-wide; those
+days are retained in full in the ES file, nothing dropped.
+
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
 Execution model: entries fill at the engulfing bar's close; exits at
