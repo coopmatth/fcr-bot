@@ -1,0 +1,33 @@
+{
+  "id": "fcr_v0_mgc_120d",
+  "label": "MGC 1m \u00b7 FCR V0 baseline",
+  "strategy": "fcr_v0",
+  "strategy_label": "First Candle Rule V0 baseline (reference)",
+  "symbol": "MGC",
+  "symbol_key": "mgc",
+  "data_file": "data/gc_1m_24mo.csv",
+  "data_symbol": "GC.v.0 tape (GLBX.MDP3)",
+  "instrument_type": "futures",
+  "point_value_usd": 10.0,
+  "friction_per_unit_usd": 4.4,
+  "window": {
+    "start": "2026-06-22",
+    "end": "2026-10-20"
+  },
+  "trading_days": 87,
+  "trades": 31,
+  "wins": 8,
+  "losses": 23,
+  "win_rate": 0.2581,
+  "net_usd": 219.0,
+  "net_r": -1.944,
+  "starting_balance_usd": 500.0,
+  "ending_equity_usd": 719.0,
+  "max_drawdown_usd": 1234.0,
+  "avg_units": 3.65,
+  "skipped_for_size": 0,
+  "total_friction_usd": 497.2,
+  "net_usd_after_friction": -278.2,
+  "ending_equity_usd_after_friction": 221.8,
+  "trade_log": "results/trades_fcr_v0_mgc_120d.csv"
+}
