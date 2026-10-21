@@ -311,6 +311,97 @@ belief. As always here, the simulator never halts for balance or
 margin; several runs' paper equity goes deeply negative, which a
 real $500 account could never survive.
 
+**Correction (added 2026-10-21, from the 24-month validation
+below).** The SPY intraday data behind every SPY cell in this lab
+(Databento DBEQ.BASIC) turned out to be **non-reproducible across
+downloads** — a second pull of the same history disagrees with the
+lab's file on roughly a third of overlapping bars. The SPY cells
+above are therefore **single-sample results**: exact for the one
+file that produced them (the engines re-verify perfectly on that
+file), but not properties of a canonical SPY tape. See the
+validation section next for what survives that caveat.
+
+## Winners — 24-month validation (2026-10-21)
+
+The lab's top five cells re-run over 24 months (2024-10-21 →
+2026-10-20; the SPY file ends 2026-10-19), same frozen spec and
+friction model. Frozen pass test: (a) 24-month net-after-friction
+> $0, (b) second half (2025-10-21 → end) net-after-friction > $0,
+(c) after-friction realized-equity trough > $0. Full record:
+`results/validation24.json`; harness: `run_validation24.py` +
+`run_validation24_spy.py`.
+
+**Previous-day sweep — MGC: FAIL.** The futures file is
+deterministic (GLBX.MDP3), so this verdict is solid. Over 24
+months: 184 trades (67W/117L), gross +$1,168.00 (+8.60R) but
+**−$1,564.40 after friction**; halves after friction H1
+−$1,735.80 / H2 +$171.40; after-friction trough **−$2,116.20**
+(2026-08-20). The $150-risk micro sizing pays $4.40/contract in
+friction against a thin gross edge — the lab's +$726.20 was one
+favourable 120-day window, not an edge. Fails (a) and (c).
+
+**SPY data integrity.** DBEQ.BASIC SPY 1-minute bars are not
+reproducible across pulls: `spy_1m_120d.csv` (lab file) vs
+`spy_1m_24mo.csv` (validation file) share identical timestamps and
+bar counts (37,015 overlap bars) yet disagree on **10,234 bars**
+(10,202 in price, median |Δclose| $0.11, max $6.66), and a third
+pull disagrees with both. The pattern (single-print bars in one
+pull where another shows full consolidated bars) points to the
+sampled construction of the BASIC feed. The gated harness
+therefore refused to validate SPY by slice-matching; the code
+route itself is proven exact (all four SPY cells re-run on the
+original lab file reproduce the lab to the cent). The honest
+completion is a **single-file** validation on
+`spy_1m_24mo.csv`, with a cross-sample replication check reported
+next to every verdict:
+
+| Cell (lab window) | Lab file: trades / gross / AF | New file: trades / gross / AF | Stability |
+| --- | --- | --- | --- |
+| IB breakout SPY | 68 / +$1,385.14 / +$1,115.58 | 68 / +$1,484.55 / +$1,216.55 | STABLE |
+| FCR V0 SPY | 26 / +$1,496.26 / +$1,001.62 | 32 / −$604.15 / −$1,281.03 | **FLIPPED** |
+| VWAP trend SPY | 45 / +$1,638.15 / +$829.15 | 40 / +$1,024.44 / +$409.36 | STABLE |
+| ORB 15m SPY | 83 / +$754.35 / +$455.07 | 83 / −$164.84 / −$462.32 | **FLIPPED** |
+
+**SPY full 24 months, single file** (500 trading days):
+
+| Cell | Trades | W/L | Gross $ | Net R | After friction | H1 AF | H2 AF | Trough (AF) | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| IB breakout | 415 | 185/230 | +$6,872.31 | +46.13R | **+$5,119.23** | +$3,431.22 | +$1,688.01 | $500.00 (never below start) | **PASS** (STABLE) |
+| FCR V0 | 171 | 48/123 | +$3,231.21 | +21.55R | −$181.55 | +$965.51 | −$1,147.06 | $35.81 | FAIL (a, b) — FLIPPED |
+| VWAP trend | 272 | 111/161 | +$8,622.05 | +57.59R | **+$4,013.33** | +$1,235.43 | +$2,777.90 | −$217.56 | FAIL (c only) — STABLE |
+| ORB 15m | 498 | 213/285 | +$9,097.52 | +60.91R | **+$7,157.36** | +$6,979.37 | +$177.99 | $340.81 | **PASS (single-sample, unstable)** — FLIPPED |
+
+Reading them straight: IB breakout is the one clean survivor —
+positive after friction over 24 months, positive in both halves,
+never underwater, and sign-stable across the two data samples.
+VWAP trend makes real money on this file and is sign-stable, but
+its realized equity dipped to −$217.56 in June 2025, so on a real
+$500 account it dies mid-run: FAIL on the survivability criterion
+alone. ORB 15m posts the biggest dollars but flipped sign across
+samples on the lab window and its H2 is nearly flat (+$177.99) —
+a pass printed on one download, not a validated edge. FCR V0 on
+SPY is negative after friction over 24 months and flipped across
+samples: the lab cell does not survive.
+
+**Portfolio (IB + FCR + VWAP trend on SPY, 24 months, new
+file):** 847 of 858 trades taken (11 skipped by the $300
+open-risk cap), combined **+$8,150.33** after friction, 39.9%
+win rate, ending equity $8,650.33, realized-curve max drawdown
+$4,889.80, trough $500.00 — PASS on its test (net > 0 and trough
+> 0), versus a naive uncapped sum of +$8,951.01. It inherits
+every caveat above: realized-P&L-only curve, a component that
+fails standalone on survivability, and single-sample SPY data
+throughout.
+
+**Bottom line of the validation.** Of the lab's five winners,
+exactly one (IB breakout on SPY) passes all three frozen criteria
+*and* is stable across data samples — and even it rests on a
+single DBEQ.BASIC download, so "validated" here means "survived
+24 months on one internally consistent sample," a weaker claim
+than the gold FCR pass, which sits on deterministic futures data.
+The sweep-on-gold result is dead after friction. Nothing here
+changes the paper-only status of the project.
+
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
 Execution model: entries fill at the engulfing bar's close; exits at
