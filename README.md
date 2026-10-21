@@ -97,6 +97,73 @@ generous accounting the $500 account lost three quarters of its value;
 the rules as coded do not show an edge on MNQ over Aug–Oct 2026.
 Trade log: `results/trades_mnq_1m_databento_60d.csv`.
 
+## Experiment matrix — 6 variants × 5 symbols (Databento, fetched 2026-10-21)
+
+Follow-up question: do principled adjustments make the rule
+profitable, and on which markets? Five 1-minute Databento series over
+the same window (2026-08-10 → 2026-10-20; SPY ends 2026-10-19, one
+day shorter — DBEQ.BASIC lags a day): **MNQ** (MNQ.v.0), **MES** priced
+off the ES.v.0 tape, **MGC** off GC.v.0, **SIL** off SI.v.0 — futures
+use the full-size contract's tape, sized as the micro ($2/$5/$10/$1000
+per point) — and **SPY** shares (DBEQ.BASIC). The ES/GC/SI/SPY pulls
+cost ≈ **$1 total** against signup credit. Every run uses the common
+spec: $500 start, $150 risk budget, futures ≤5 contracts, SPY uncapped
+shares, one trade/day, entries before 12:00 ET, flat 15:55 ET, no
+slippage/fees modeled.
+
+Variants (frozen definitions, identical on all five symbols):
+
+- **V0 baseline** — the original rules exactly as shipped.
+- **V1 min-FVG** — setup valid only if the FVG height ≥ 0.5 × ATR(14)
+  of the day's RTH 1-minute bars before the displacement candle
+  (fewer than 5 bars → setup invalid).
+- **V2 first-candle filter** — skip the day if the first-candle range
+  exceeds 1.5 × the median first-candle range of all prior days in the
+  dataset (needs ≥5 prior days).
+- **V3 partials + BE** — at +1.5R bank half the position (floor; a
+  1-unit position banks nothing) at that price and move the stop to
+  breakeven; the remainder exits at +3R, the moved stop, or 15:55.
+- **V4 trend** — setups only in the direction of the first candle's
+  body (close vs open; flat body allows both).
+- **V5 combined** — V1+V2+V3+V4.
+
+| Symbol | V0 baseline | V1 min-FVG | V2 FC filter | V3 partials | V4 trend | V5 combined |
+| --- | --- | --- | --- | --- | --- | --- |
+| MNQ | 13t · 15% · −$374.50 · −5.00R | 19t · 5% · −$1,751.50 · −15.00R | 11t · 9% · −$696.50 · −7.00R | 13t · 31% · −$290.00 · −3.40R | 10t · 20% · −$92.00 · −2.00R | 14t · 7% · −$1,533.00 · −12.25R |
+| MES | 23t · 22% · −$358.75 · −3.00R | 21t · 33% · **+$185.00 · +4.72R** | 22t · 23% · −$215.00 · −2.00R | 23t · 30% · −$589.38 · −8.10R | 13t · 8% · −$840.00 · −9.00R | 12t · 50% · −$126.25 · +1.10R |
+| MGC | 18t · 28% · **+$584.00 · +2.00R** | 22t · 18% · −$430.00 · −6.00R | 16t · 25% · **+$299.00 · +0.00R** | 18t · 33% · **+$447.50 · +0.80R** | 11t · 27% · **+$373.00 · +1.00R** | 12t · 33% · **+$124.50 · −0.25R** |
+| SIL | 20t · 20% · −$715.00 · −4.00R | 16t · 19% · −$475.00 · −4.00R | 19t · 21% · −$575.00 · −3.00R | 20t · 30% · −$85.00 · +0.40R | 15t · 7% · −$1,365.00 · −11.00R | 12t · 42% · **+$502.50 · +4.50R** |
+| SPY | 14t · 14% · −$903.93 · −6.00R | 16t · 12% · −$1,203.14 · −8.00R | 13t · 15% · −$753.97 · −5.00R | 14t · 29% · −$602.76 · −4.00R | 8t · 12% · −$600.46 · −4.00R | 8t · 25% · −$449.53 · −3.00R |
+
+Machine-readable matrix (with ending equity, max drawdown, average
+size, skipped-for-size): `results/experiments.json`; per-run trade
+logs: `results/trades_<symbol>_1m_<variant>.csv`. Reproduce with
+`run_experiments.py`; `verify_experiments.py` re-derives every number
+from the CSVs independently (it confirms V0 MNQ still reproduces the
+−$374.50 baseline trade-for-trade, and hand-checks all 41 partial
+legs in the V3/V5 runs).
+
+Honest reading: **7 of 30 cells finished positive, and every variant
+lost money summed across the five symbols — no adjustment made the
+rule broadly profitable.** Gold (MGC) is the only consistent bright
+spot: positive in 5 of its 6 cells, including the untouched baseline —
+the best single cell in the matrix. Partials (V3) reliably softened
+losses (higher win rates, shallower drawdowns, e.g. SIL −$715 →
+−$85) without creating an edge. Min-FVG (V1) backfired on MNQ:
+rejecting a setup doesn't end the day, it hands the day to a later,
+usually worse setup. SPY lost under every variant, and so did MNQ —
+the market the video teaches.
+
+**Small-sample warning.** Each cell holds only ~8–23 trades over ~60
+days (roughly 13 in a typical run). At that size a few trades'
+difference flips almost any cell's sign — gold's whole baseline
+profit is about one extra winning trade — and picking the best of 30
+cells is itself a form of overfitting: with 30 tries, chance alone
+manufactures a few good-looking cells. The variant columns also share
+most of their trades, so gold's 5-of-6 is not five independent
+confirmations. Nothing here is a validated edge; the gold column is
+a hypothesis for a longer test, not a result.
+
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
 Execution model: entries fill at the engulfing bar's close; exits at
