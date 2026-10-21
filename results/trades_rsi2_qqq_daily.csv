@@ -1,0 +1,5 @@
+strategy,symbol,direction,entry_date,exit_date,entry_price,exit_price,exit_reason,units,hold_days,risk_usd,pnl_usd,pnl_net_usd,r_multiple,r_net
+rsi2_reversion,QQQ,long,2026-06-05,2026-06-11,705.06,717.12,sma5_exit,4,4,150.0,48.24,48.08,0.322,0.321
+rsi2_reversion,QQQ,long,2026-07-28,2026-07-30,675.49,683.55,sma5_exit,4,2,150.0,32.24,32.08,0.215,0.214
+rsi2_reversion,QQQ,long,2026-08-20,2026-08-26,710.93,711.37,sma5_exit,4,4,150.0,1.76,1.6,0.012,0.011
+rsi2_reversion,QQQ,long,2026-10-14,2026-10-20,728.95,717.63,end_of_data,4,4,150.0,-45.28,-45.44,-0.302,-0.303
