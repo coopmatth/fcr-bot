@@ -1,0 +1,6 @@
+strategy,symbol,direction,entry_date,exit_date,entry_price,exit_price,exit_reason,units,hold_days,risk_usd,pnl_usd,pnl_net_usd,r_multiple,r_net
+donchian_trend,SPY,long,2026-05-01,2026-07-24,721.25,738.51,channel_exit,9,57,142.53,155.34,154.98,1.09,1.087
+donchian_trend,SPY,short,2026-07-30,2026-08-03,736.05,753.1285,stop,8,2,136.63,-136.63,-136.95,-1.0,-1.002
+donchian_trend,SPY,long,2026-08-04,2026-08-21,760.63,766.05,channel_exit,8,13,147.3,43.36,43.04,0.294,0.292
+donchian_trend,SPY,short,2026-09-11,2026-09-22,764.72,774.03,channel_exit,12,7,144.84,-111.72,-112.2,-0.771,-0.775
+donchian_trend,SPY,long,2026-10-07,2026-10-16,775.77,762.1983,stop,11,7,149.29,-149.29,-149.73,-1.0,-1.003
