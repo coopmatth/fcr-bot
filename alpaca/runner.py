@@ -109,14 +109,36 @@ artifact excluded from scoring — the scored forward test starts
 Thu 2026-10-22 at exactly $500.00. See the README section
 "ORB-15 Alpaca paper forward test" and
 deploy/INSTALL_orb15_alpaca.md for the service setup.
+
+HARDENING (2026-10-21, after docs/alpaca_runner_audit.md):
+deterministic client_order_ids with lookup recovery and an
+orphan-flatten policy (F1); hard entry caps MAX_SHARES /
+MAX_NOTIONAL_USD with size_capped events (F5); cancel_order +
+partially_filled as a live state, partial-exit remainders kept
+under level management (F2/F4); an exit chain that can never
+kill the process — market order, close_position fallback,
+exit_failure_critical + per-bar retry (F3); day-start market
+calendar with early-close flatten times and a loud fallback
+(F6); a single-instance flock (F7); corrupt-state quarantine
+into a halted, reconciled start (F8); a wall-clock flatten
+backstop watchdog in serve() (F11); redirect-refusing HTTP
+transport (F13, in client.py). F10/F14/F9/F12/F15 remain open
+by design — they alter strategy semantics.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
+import threading
 import time as time_module
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - the service runs on Linux
+    fcntl = None  # type: ignore[assignment]
 from dataclasses import asdict, dataclass
 from datetime import date as date_type
 from datetime import datetime, time, timedelta
@@ -148,6 +170,16 @@ ET = ZoneInfo("America/New_York")
 SYMBOL = "SPY"
 OVERLAY_START_USD = 500.0
 FRICTION_PER_SHARE_USD = 0.04  # the backtest's AF model, for comparison
+
+# Hard entry-size caps (hardening F5) — the ONE config place for
+# them. The frozen strategy sizes floor($150 / stop distance) with
+# no ceiling; on the real tape that reached 300 shares / ~$182k
+# notional against a $500 overlay. An entry order is now
+# min(spec shares, MAX_SHARES, floor(MAX_NOTIONAL_USD / entry
+# price)); when a cap binds, the trade is booked at its actual
+# size and a size_capped event records spec vs actual.
+MAX_SHARES = 200
+MAX_NOTIONAL_USD = 150_000.0
 
 PHASE_IDLE = "IDLE"
 PHASE_RANGE_BUILDING = "RANGE_BUILDING"
@@ -297,9 +329,15 @@ class Fill:
 
 
 class Broker(Protocol):
-    """What the runner needs from a broker: signed position and
-    market-order fills. AlpacaBroker is production; SimulatedBroker
-    is replay/test machinery."""
+    """What the runner needs from a broker: signed position,
+    market-order fills, and a whole-position close. AlpacaBroker is
+    production; SimulatedBroker is replay/test machinery.
+
+    A broker MAY also expose ``set_client_order_id(cid)``: the
+    runner calls it (when present) immediately before place_market
+    so the order carries a deterministic client_order_id
+    (hardening F1). Brokers without it are called exactly as
+    before."""
 
     def position_qty(self, symbol: str) -> int:
         ...
@@ -307,11 +345,26 @@ class Broker(Protocol):
     def place_market(self, symbol: str, qty: int, side: str) -> Fill:
         ...
 
+    def close_position(self, symbol: str) -> Fill:
+        ...
+
 
 class AlpacaBroker:
     """Broker over AlpacaClient (PAPER). Places a market order and
     polls it to a fill; a partially-filled order that reaches a final
-    state fills for the filled quantity only — never assumed."""
+    state fills for the filled quantity only — never assumed.
+
+    Hardening (2026-10-21 audit):
+    * F1 — when the runner supplies a client_order_id and the POST
+      itself fails with an UNKNOWN outcome (transport error, or a
+      409 duplicate-id conflict), the order is looked up by that id
+      before anything is concluded. A definitive refusal (any other
+      HTTP error — Alpaca answered, so nothing was created) raises
+      immediately.
+    * F2 — ``partially_filled`` is a LIVE state: polling continues
+      until the order is terminal or the poll deadline passes; at
+      the deadline the unfilled remainder is canceled and the
+      filled quantity is booked."""
 
     _FINAL_BAD = {"canceled", "expired", "rejected", "suspended"}
 
@@ -326,6 +379,11 @@ class AlpacaBroker:
         self._sleep = sleep_fn
         self._poll_seconds = poll_seconds
         self._max_polls = max_polls
+        self._pending_client_order_id: Optional[str] = None
+
+    def set_client_order_id(self, client_order_id: Optional[str]) -> None:
+        """One-shot: the id the NEXT place_market submission carries."""
+        self._pending_client_order_id = client_order_id
 
     def position_qty(self, symbol: str) -> int:
         pos = self._client.get_position(symbol)
@@ -334,8 +392,81 @@ class AlpacaBroker:
         return int(float(pos.get("qty") or 0))
 
     def place_market(self, symbol: str, qty: int, side: str) -> Fill:
-        order = self._client.place_market_order(symbol, qty, side)
-        order_id = order["id"]
+        client_order_id, self._pending_client_order_id = (
+            self._pending_client_order_id,
+            None,
+        )
+        try:
+            if client_order_id is not None:
+                order = self._client.place_market_order(
+                    symbol, qty, side, client_order_id=client_order_id
+                )
+            else:
+                order = self._client.place_market_order(symbol, qty, side)
+        except AlpacaAPIError as exc:
+            order = self._recover_submission(client_order_id, exc)
+        return self._await_fill(order["id"])
+
+    def close_position(self, symbol: str) -> Fill:
+        """Market-close the whole position (DELETE /v2/positions)
+        and poll the closing order to its fill."""
+        order = self._client.close_position(symbol)
+        return self._await_fill(order["id"])
+
+    # ------------------------------------------------------------ internals
+    def _recover_submission(self, client_order_id: Optional[str], exc) -> dict:
+        """A place_market_order POST raised. Decide what is KNOWN:
+        a definitive HTTP refusal means Alpaca answered and created
+        nothing; a transport failure or a 409 means the outcome is
+        unknown — look the order up by client_order_id (F1)."""
+        if client_order_id is None:
+            raise exc
+        if exc.status is not None and exc.status != 409:
+            raise OrderError(
+                f"Alpaca refused the order submission (HTTP "
+                f"{exc.status}): {exc}",
+                status=exc.status,
+                payload=exc.payload,
+            ) from exc
+        for attempt in range(3):
+            try:
+                found = self._client.get_order_by_client_order_id(
+                    client_order_id
+                )
+                if found.get("id"):
+                    return found
+            except AlpacaAPIError as lookup_exc:
+                if lookup_exc.status != 404:
+                    raise OrderError(
+                        f"order submission outcome unknown and the "
+                        f"client_order_id lookup itself failed: "
+                        f"{lookup_exc}",
+                        status=lookup_exc.status,
+                        payload=lookup_exc.payload,
+                    ) from lookup_exc
+            if attempt < 2:
+                self._sleep(self._poll_seconds)
+        raise OrderError(
+            f"order submission outcome unknown and no order exists "
+            f"under client_order_id {client_order_id!r}; if the "
+            f"order did fill, day-start reconciliation's orphan "
+            f"policy will flatten it"
+        ) from exc
+
+    def _cancel_remainder(self, order_id: str) -> None:
+        """Best-effort cancel of an order's unfilled remainder (F2).
+        Duck-typed: a minimal client without cancel_order simply
+        skips this (the poll deadline still bounds the wait)."""
+        cancel = getattr(self._client, "cancel_order", None)
+        if cancel is None:
+            return
+        try:
+            cancel(order_id)
+        except Exception:
+            pass  # the fill we already have is booked either way
+
+    def _await_fill(self, order_id: str) -> Fill:
+        last_partial: Optional[dict] = None
         for _ in range(self._max_polls):
             current = self._client.get_order(order_id)
             status = str(current.get("status") or "")
@@ -356,10 +487,26 @@ class AlpacaBroker:
                     f"Alpaca order {order_id} ended {status} with no fill.",
                     payload=current,
                 )
+            if status == "partially_filled" and filled_qty > 0:
+                # F2: a live state, not a failure — keep polling
+                # until terminal or the deadline, remembering the
+                # best-known partial fill.
+                last_partial = current
             self._sleep(self._poll_seconds)
+        # Deadline: cancel whatever is unfilled, then book exactly
+        # what filled (F2) — or refuse, if nothing did.
+        self._cancel_remainder(order_id)
+        if last_partial is not None:
+            filled_qty = int(float(last_partial.get("filled_qty") or 0))
+            price = last_partial.get("filled_avg_price")
+            if filled_qty > 0 and price is not None:
+                return Fill(
+                    price=float(price), qty=filled_qty, order_id=order_id
+                )
         raise OrderError(
             f"Alpaca order {order_id} did not fill after "
-            f"{self._max_polls} polls; refusing to assume a fill."
+            f"{self._max_polls} polls (remainder cancel requested); "
+            f"refusing to assume a fill."
         )
 
 
@@ -396,6 +543,26 @@ class SimulatedBroker:
              "price": self._price}
         )
         self._qty += qty if side == "buy" else -qty
+        return Fill(price=self._price, qty=qty, order_id=order_id)
+
+    def close_position(self, symbol: str) -> Fill:
+        """Close the whole position at the current market price.
+
+        Deliberately NOT routed through place_market: on the real
+        API this is a different endpoint (DELETE /v2/positions),
+        and the runner's F3 exit fallback depends on it working
+        when plain exit orders are being rejected."""
+        if self._qty == 0:
+            raise OrderError(f"no {symbol} position to close")
+        qty = abs(self._qty)
+        side = "sell" if self._qty > 0 else "buy"
+        self._seq += 1
+        order_id = f"sim-close-{self._seq}"
+        self.orders.append(
+            {"id": order_id, "symbol": symbol, "qty": qty, "side": side,
+             "price": self._price, "kind": "close_position"}
+        )
+        self._qty = 0
         return Fill(price=self._price, qty=qty, order_id=order_id)
 
 
@@ -460,6 +627,44 @@ class StateStore:
         os.replace(tmp, self.path)
 
 
+class InstanceLock:
+    """Single-instance guard (hardening F7): a non-blocking flock
+    on a lock file in the state dir. The service is the only runner;
+    a second process (e.g. a manual ``python -m alpaca.runner``
+    during debugging) must refuse to start rather than double-trade
+    the account. acquire() returns False when another live process
+    holds the lock — the caller logs the refusal and exits CLEANLY
+    (no crash loop). The fd is held for the process lifetime; the
+    OS releases the lock if the holder dies."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self._fd: Optional[int] = None
+
+    def acquire(self) -> bool:
+        if fcntl is None:  # pragma: no cover - non-Unix fallback
+            return True
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            return False
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{os.getpid()}\n".encode())
+        self._fd = fd
+        return True
+
+    def release(self) -> None:
+        if self._fd is not None and fcntl is not None:
+            try:
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
+            finally:
+                os.close(self._fd)
+                self._fd = None
+
+
 # ----------------------------------------------------------------------
 # Runner
 # ----------------------------------------------------------------------
@@ -508,6 +713,9 @@ class Orb15Runner:
         symbol: str = SYMBOL,
         overlay_start_usd: float = OVERLAY_START_USD,
         friction_per_share_usd: float = FRICTION_PER_SHARE_USD,
+        max_shares: int = MAX_SHARES,
+        max_notional_usd: float = MAX_NOTIONAL_USD,
+        calendar_fn: Optional[Callable] = None,
     ):
         self.broker = broker
         self.enabled = enabled
@@ -517,11 +725,34 @@ class Orb15Runner:
         self.symbol = symbol
         self.overlay_start_usd = float(overlay_start_usd)
         self.friction_per_share_usd = float(friction_per_share_usd)
+        # F5 hard caps (defaults from the module constants — the
+        # one config place; injectable only for tests).
+        self.max_shares = int(max_shares)
+        self.max_notional_usd = float(max_notional_usd)
+        # F6 market calendar: callable(day) -> {"open": time,
+        # "close": time} for a trading day, None for a non-trading
+        # day; raising means "calendar unavailable" (fall back to
+        # the default schedule, loudly). None = not configured:
+        # default RTH schedule assumed.
+        self.calendar_fn = calendar_fn
         self._pos: Optional[RunnerPosition] = None
         self._phase = PHASE_IDLE
         # The current day run's live frontier (see run_day). None =
         # no frontier: every bar counts as live (offline replay).
         self._live_since: Optional[datetime] = None
+        # Per-run hardening bookkeeping (reset every run_day):
+        self._current_day: Optional[date_type] = None
+        self._exit_seq = 0
+        self._exit_failures = 0
+        self._exit_pending_reason: Optional[str] = None
+        self._exit_pending_trade = None
+        self._remainder_managed = False
+        self._remainder_bar_ts: Optional[datetime] = None
+        self._flatten_time: time = FLATTEN_TIME
+        self._day_flatten_dt: Optional[datetime] = None
+        self._day_state: Optional[dict] = None
+        self._day_summary: Optional[dict] = None
+        self._last_bar_at: Optional[datetime] = None
 
     # ------------------------------------------------------------ state io
     def _fresh_state(self, day: date_type) -> dict:
@@ -576,9 +807,22 @@ class Orb15Runner:
                 date=day.isoformat(),
                 position=pos.to_state(),
             )
-            fill = self.broker.place_market(
-                self.symbol, pos.qty, _exit_side(pos.direction)
-            )
+            # Exit through the fallback chain (F3): a rejected
+            # market order falls back to close_position; only if
+            # BOTH fail does the leftover halt the runner.
+            self._set_broker_cid(self._client_order_id("leftover"))
+            try:
+                fill = self.broker.place_market(
+                    self.symbol, pos.qty, _exit_side(pos.direction)
+                )
+            except Exception:
+                try:
+                    fill = self.broker.close_position(self.symbol)
+                except Exception as exc2:
+                    raise ReconciliationHalt(
+                        f"overnight leftover flatten failed via both "
+                        f"market order and close_position: {exc2}"
+                    ) from exc2
             pnl = self._book_exit(fill)
             state["realized_pnl_total_usd"] = round(
                 float(state.get("realized_pnl_total_usd") or 0.0) + pnl, 2
@@ -599,10 +843,28 @@ class Orb15Runner:
                 f"{day.isoformat()} — clock or state corruption"
             )
         if broker_qty != 0 and state_qty == 0:
+            # ORPHAN POLICY (hardening F1): a holding the state
+            # file cannot explain is never left riding unmanaged
+            # and never adopted on a guess — it is FLATTENED via
+            # close_position, logged in full, and entries halt for
+            # the day. (Classic cause: an entry fill the runner
+            # never saw because the submission's outcome was lost.)
+            try:
+                self._flatten_orphan_position(
+                    day, state, broker_qty,
+                    origin="reconciliation_unknown_holding",
+                )
+            except Exception as exc:
+                raise ReconciliationHalt(
+                    f"paper account holds {broker_qty} {self.symbol} "
+                    f"the runner state cannot explain, and the "
+                    f"orphan flatten failed: {exc}"
+                ) from exc
             raise ReconciliationHalt(
-                f"paper account holds {broker_qty} {self.symbol} but "
-                "the runner state has no position — unknown holding, "
-                "refusing to guess"
+                f"paper account held {broker_qty} {self.symbol} the "
+                "runner state could not explain — flattened under "
+                "the orphan policy (see the orphan_flattened "
+                "event); entries halted for the day"
             )
         if state_qty != 0 and broker_qty == 0:
             raise ReconciliationHalt(
@@ -653,6 +915,326 @@ class Orb15Runner:
             self._pos = None
         return round(pnl, 2)
 
+    # -------------------------------------------- hardening helpers
+    def _client_order_id(self, purpose: str) -> str:
+        """Deterministic client_order_id (F1): per date + purpose +
+        exit sequence. A given day's entry is ALWAYS
+        ``orb15-<date>-entry`` — identical across process restarts,
+        which is what makes a lost submission recoverable by
+        lookup instead of guessable."""
+        day = self._current_day.isoformat() if self._current_day else "nodate"
+        if purpose == "exit":
+            return f"orb15-{day}-exit-{self._exit_seq}"
+        return f"orb15-{day}-{purpose}"
+
+    def _set_broker_cid(self, client_order_id: Optional[str]) -> None:
+        """Hand the broker the id for its next submission, when the
+        broker supports one (see the Broker protocol note)."""
+        setter = getattr(self.broker, "set_client_order_id", None)
+        if callable(setter):
+            setter(client_order_id)
+
+    def _capped_qty(self, units: int, price: float):
+        """Apply the F5 hard caps. Returns (qty, info-or-None);
+        info describes the clipping when a cap binds."""
+        by_notional = units
+        if price and price > 0:
+            by_notional = int(
+                math.floor(self.max_notional_usd / float(price))
+            )
+        qty = min(int(units), self.max_shares, by_notional)
+        if qty >= units:
+            return int(units), None
+        binding = []
+        if self.max_shares <= by_notional:
+            binding.append("max_shares")
+        if by_notional <= self.max_shares:
+            binding.append("max_notional")
+        info = {
+            "spec_shares": int(units),
+            "capped_shares": int(qty),
+            "strategy_entry_price": float(price),
+            "spec_notional_usd": round(int(units) * float(price), 2),
+            "capped_notional_usd": round(int(qty) * float(price), 2),
+            "binding_caps": binding,
+            "max_shares": self.max_shares,
+            "max_notional_usd": self.max_notional_usd,
+        }
+        return int(qty), info
+
+    def _exit_fill(
+        self,
+        qty: int,
+        side: str,
+        *,
+        context: str,
+        ts: Optional[datetime] = None,
+    ) -> Optional[Fill]:
+        """THE exit-order path (hardening F3): an exit failure must
+        never kill the process or die silently. Try a market order;
+        on ANY failure fall back to close_position ONCE; if that
+        fails too, log exit_failure_critical and return None — the
+        caller keeps the position under management and retries on
+        subsequent bars. (Entries deliberately do NOT come through
+        here: they may still fail the day, per the audit scope.)"""
+        when = ts or self._clock()
+        day = self._current_day.isoformat() if self._current_day else None
+        self._exit_seq += 1
+        self._set_broker_cid(self._client_order_id("exit"))
+        try:
+            return self.broker.place_market(self.symbol, qty, side)
+        except Exception as exc:
+            self.log.emit(
+                "exit_order_failed",
+                ts=when,
+                date=day,
+                context=context,
+                qty=qty,
+                side=side,
+                error=f"{type(exc).__name__}: {exc}",
+                fallback="close_position",
+            )
+        try:
+            return self.broker.close_position(self.symbol)
+        except Exception as exc2:
+            self._exit_failures += 1
+            self.log.emit(
+                "exit_failure_critical",
+                ts=when,
+                date=day,
+                context=context,
+                qty=qty,
+                side=side,
+                error=f"{type(exc2).__name__}: {exc2}",
+                note=(
+                    "exit failed via market order AND close_position; "
+                    "position remains under management and the exit "
+                    "will be retried on subsequent bars / at flatten"
+                ),
+            )
+            return None
+
+    def _flatten_orphan_position(
+        self, day: date_type, state: dict, broker_qty: int, *, origin: str
+    ) -> Fill:
+        """ORPHAN POLICY (F1): flatten an account holding the state
+        file cannot explain, via close_position, with the full
+        detail logged. The orphan's entry fill is unknown to the
+        runner, so NO overlay pnl is booked for it — the overlay
+        tracks strategy trades only; the event says so explicitly.
+        Raises on failure (the caller decides halt vs log)."""
+        self.log.emit(
+            "orphan_detected",
+            ts=self._clock(),
+            date=day.isoformat(),
+            broker_qty=broker_qty,
+            state_position=state.get("position"),
+            origin=origin,
+        )
+        fill = self.broker.close_position(self.symbol)
+        remaining = self.broker.position_qty(self.symbol)
+        if remaining != 0:
+            raise OrderError(
+                f"orphan flatten incomplete: {remaining} "
+                f"{self.symbol} still held after close_position"
+            )
+        self.log.emit(
+            "orphan_flattened",
+            ts=self._clock(),
+            date=day.isoformat(),
+            flattened_qty=broker_qty,
+            fill_price=fill.price,
+            order_id=fill.order_id,
+            origin=origin,
+            pnl_booked_usd=0.0,
+            note=(
+                "entry fill unknown to the runner (the position was "
+                "never in its state); overlay not adjusted"
+            ),
+        )
+        return fill
+
+    def _quarantine_state(self, day: date_type, exc: Exception) -> dict:
+        """F8: a corrupt state file is quarantined (renamed aside,
+        never deleted), logged loudly, and replaced with a fresh
+        HALTED state pending reconciliation — instead of the old
+        behavior, an uncaught JSONDecodeError crash-looping the
+        service every 30s."""
+        quarantined_to = None
+        path = self.store.path
+        if path is not None and path.exists():
+            stamp = self._clock().strftime("%Y%m%dT%H%M%S")
+            target = path.with_name(f"runner_state.corrupt-{stamp}.json")
+            os.replace(path, target)
+            quarantined_to = str(target)
+        self.log.emit(
+            "state_quarantined",
+            ts=self._clock(),
+            date=day.isoformat(),
+            error=f"{type(exc).__name__}: {exc}",
+            quarantined_to=quarantined_to,
+            note=(
+                "state file was corrupt; starting HALTED pending "
+                "reconciliation (flat account -> stay halted; "
+                "holding -> orphan policy flattens it)"
+            ),
+        )
+        state = self._fresh_state(day)
+        state["halted"] = True
+        state["halt_reason"] = (
+            f"state file corrupt ({type(exc).__name__}); quarantined "
+            f"to {quarantined_to}; starting halted pending "
+            "reconciliation"
+        )
+        state["state_quarantined"] = True
+        state["quarantine_reconciled"] = False
+        return state
+
+    def _reconcile_quarantine(self, day: date_type, state: dict) -> None:
+        """The F8 follow-through, run once from the halted branch:
+        check the account for the quarantined start. Flat -> stay
+        halted (a human reviews). Holding -> the F1 orphan path
+        flattens it; a flatten failure is logged critical and the
+        runner STAYS halted (loud, no crash loop)."""
+        try:
+            qty = self.broker.position_qty(self.symbol)
+            if qty == 0:
+                self.log.emit(
+                    "quarantine_reconciled_flat",
+                    ts=self._clock(),
+                    date=day.isoformat(),
+                    note="account is flat; runner stays halted for review",
+                )
+            else:
+                self._flatten_orphan_position(
+                    day, state, qty, origin="corrupt_state_quarantine"
+                )
+                self.log.emit(
+                    "quarantine_orphan_flattened",
+                    ts=self._clock(),
+                    date=day.isoformat(),
+                    broker_qty=qty,
+                )
+        except Exception as exc:
+            self.log.emit(
+                "quarantine_reconcile_failed",
+                ts=self._clock(),
+                date=day.isoformat(),
+                error=f"{type(exc).__name__}: {exc}",
+                note="runner stays halted; manual intervention required",
+            )
+        state["quarantine_reconciled"] = True
+        self.store.save(state)
+
+    def _resolve_schedule(self, day: date_type) -> dict:
+        """F6: resolve the day's market schedule via calendar_fn.
+        Returns {status, market_open, market_close, non_trading,
+        flatten_time}; also sets self._flatten_time and
+        self._day_flatten_dt. A calendar failure falls back to the
+        default RTH schedule and logs calendar_unavailable —
+        never silent."""
+        schedule = {
+            "status": "not_configured",
+            "market_open": None,
+            "market_close": None,
+            "non_trading": False,
+            "flatten_time": FLATTEN_TIME,
+        }
+        if self.calendar_fn is not None:
+            try:
+                entry = self.calendar_fn(day)
+            except Exception as exc:
+                schedule["status"] = "unavailable_fallback"
+                self.log.emit(
+                    "calendar_unavailable",
+                    ts=self._clock(),
+                    date=day.isoformat(),
+                    error=f"{type(exc).__name__}: {exc}",
+                    note="falling back to the default RTH schedule",
+                )
+            else:
+                if entry is None:
+                    schedule["status"] = "ok"
+                    schedule["non_trading"] = True
+                else:
+                    schedule["status"] = "ok"
+                    schedule["market_open"] = entry.get("open")
+                    schedule["market_close"] = entry.get("close")
+                    close = entry.get("close")
+                    if close is not None and close < time(16, 0):
+                        close_dt = datetime.combine(day, close, tzinfo=ET)
+                        early = (close_dt - timedelta(minutes=5)).time()
+                        schedule["flatten_time"] = min(FLATTEN_TIME, early)
+        self._flatten_time = schedule["flatten_time"]
+        self._day_flatten_dt = datetime.combine(
+            day, self._flatten_time, tzinfo=ET
+        )
+        return schedule
+
+    def _maybe_backstop_flatten(self, now: datetime) -> bool:
+        """F11 wall-clock flatten backstop (contained version):
+        if a position is open, the day's flatten time has passed,
+        and no bar has been processed for over 3 minutes (the feed
+        has stalled — bars can no longer drive the exit), attempt
+        the flatten through the normal exit path. Returns True when
+        the backstop fired (whether or not the exit succeeded — a
+        failure is logged exit_failure_critical by _exit_fill and
+        the next poll retries). Called by serve()'s watchdog
+        thread; also directly testable."""
+        if self._pos is None or self._day_state is None:
+            return False
+        if self._day_flatten_dt is None or now < self._day_flatten_dt:
+            return False
+        if self._last_bar_at is None:
+            return False
+        if now - self._last_bar_at <= timedelta(minutes=3):
+            return False
+        state = self._day_state
+        summary = self._day_summary
+        pos = self._pos
+        self.log.emit(
+            "flatten_backstop_fired",
+            ts=now,
+            date=state.get("date"),
+            direction=pos.direction,
+            qty=pos.qty,
+            flatten_time=self._flatten_time.strftime("%H:%M"),
+            last_bar_at=self._last_bar_at.isoformat(),
+            note="no bar processed for over 3 minutes past the "
+                 "flatten time; exiting via the normal exit path",
+        )
+        fill = self._exit_fill(
+            pos.qty, _exit_side(pos.direction),
+            context="wall_clock_backstop", ts=now,
+        )
+        if fill is None:
+            return True
+        pnl = self._book_exit(fill)
+        if summary is not None:
+            self._apply_pnl(state, summary, pnl, fill.qty)
+            summary["trades"] += 1
+        self.log.emit(
+            "trade_closed",
+            ts=now,
+            date=state.get("date"),
+            direction=pos.direction,
+            exit_reason="EOD_FLATTEN",
+            strategy_exit_price=None,
+            fill_exit_price=fill.price,
+            exit_order_id=fill.order_id,
+            managed_by="wall_clock_backstop",
+            pnl_usd=pnl,
+            overlay_equity_usd=state.get("overlay_equity_usd"),
+        )
+        self._remainder_managed = False
+        self._remainder_bar_ts = None
+        self._exit_pending_reason = None
+        self._exit_pending_trade = None
+        if self._pos is None:
+            self._phase = PHASE_DONE
+        self._save(state)
+        return True
+
     # ------------------------------------------------- live-frontier gate
     def _bar_is_live(self, bar: Bar) -> bool:
         """A bar is LIVE iff it completed after this session's live
@@ -676,6 +1258,11 @@ class Orb15Runner:
                 f"order for historical bar {bar.ts.isoformat()} "
                 f"(live_since={self._live_since})"
             )
+        # F1: every entry carries the deterministic per-day
+        # client_order_id, so a lost submission outcome is
+        # recoverable by lookup (and a duplicate POST is a 409 the
+        # broker resolves by lookup — never a second position).
+        self._set_broker_cid(self._client_order_id("entry"))
         return self.broker.place_market(self.symbol, qty, side)
 
     # ----------------------------------------------------------------- day
@@ -695,12 +1282,29 @@ class Orb15Runner:
         the strategy (its state must be rebuilt from them) but
         never allowed to place an entry order. None = no frontier:
         every bar counts as live (offline replay / unit tests)."""
-        state = self.store.load() or self._fresh_state(day)
+        # F8: a corrupt state file must not crash-loop the service
+        # — quarantine it and start halted pending reconciliation.
+        try:
+            state = self.store.load()
+        except json.JSONDecodeError as exc:
+            state = self._quarantine_state(day, exc)
+        state = state or self._fresh_state(day)
         if state.get("date") != day.isoformat() and not state.get("position"):
             # New day, flat: roll the date, keep the overlay equity.
             state["date"] = day.isoformat()
         self._pos = None
         self._phase = PHASE_IDLE
+        # Per-run hardening bookkeeping.
+        self._current_day = day
+        self._exit_seq = 0
+        self._exit_failures = 0
+        self._exit_pending_reason = None
+        self._exit_pending_trade = None
+        self._remainder_managed = False
+        self._remainder_bar_ts = None
+        self._day_state = None
+        self._day_summary = None
+        self._last_bar_at = None
         summary = {
             "date": day.isoformat(),
             "halted": False,
@@ -712,6 +1316,8 @@ class Orb15Runner:
             ),
             "skipped_for_size": 0,
             "orders_blocked_kill_switch": 0,
+            "size_capped": 0,
+            "exit_failures": 0,
             "missed_day": False,
             "catchup_bars": 0,
             "live_since": live_since.isoformat() if live_since else None,
@@ -719,6 +1325,13 @@ class Orb15Runner:
         }
         if state.get("halted"):
             self._phase = PHASE_HALTED
+            # F8 follow-through: a quarantined start reconciles
+            # the account once (flat -> stay halted; holding ->
+            # orphan policy) before the plain halted return.
+            if state.get("state_quarantined") and not state.get(
+                "quarantine_reconciled"
+            ):
+                self._reconcile_quarantine(day, state)
             self.log.emit(
                 "runner_start_halted",
                 ts=self._clock(),
@@ -729,6 +1342,9 @@ class Orb15Runner:
             summary["halt_reason"] = state.get("halt_reason")
             return summary
 
+        # F6: resolve the market schedule BEFORE the day starts —
+        # the flatten time it yields may be earlier than 15:55.
+        schedule = self._resolve_schedule(day)
         self.log.emit(
             "runner_day_start",
             ts=self._clock(),
@@ -736,6 +1352,16 @@ class Orb15Runner:
             enabled=self.enabled,
             live_since=live_since.isoformat() if live_since else None,
             feed_note=FEED_NOTE,
+            calendar_status=schedule["status"],
+            market_close=(
+                schedule["market_close"].strftime("%H:%M")
+                if schedule["market_close"] else None
+            ),
+            early_close=bool(
+                schedule["market_close"]
+                and schedule["market_close"] < time(16, 0)
+            ),
+            flatten_time=self._flatten_time.strftime("%H:%M"),
         )
         try:
             self._reconcile(day, state)
@@ -747,6 +1373,26 @@ class Orb15Runner:
             + float(state.get("realized_pnl_total_usd") or 0.0),
             2,
         )
+        if schedule["non_trading"]:
+            # F6: the calendar says today is not a trading day —
+            # a clean skip (reconciliation above already handled
+            # any leftover/orphan position).
+            self._phase = PHASE_DONE
+            summary["no_trade_reason"] = "non_trading_day"
+            self.log.emit(
+                "non_trading_day",
+                ts=self._clock(),
+                date=day.isoformat(),
+                source="alpaca_calendar",
+            )
+            self._save(state)
+            summary["overlay_equity_usd"] = state["overlay_equity_usd"]
+            self.log.emit("day_summary", ts=self._clock(), **summary)
+            return summary
+        # Day context for the F11 wall-clock backstop: the live
+        # state/summary dicts this run mutates.
+        self._day_state = state
+        self._day_summary = summary
         # The session's live frontier is part of the day's persisted
         # state: catch-up mode is explicit, never implicit.
         self._live_since = live_since
@@ -773,9 +1419,59 @@ class Orb15Runner:
         catchup_bars = 0
         last_catchup_close: Optional[float] = None
 
+        def book_strategy_exit(trade, fill, bar, managed_by=None) -> None:
+            """Book a strategy-decided exit fill. A PARTIAL fill
+            (F4) leaves the remainder under runner management at
+            the recorded stop/target for the rest of the day —
+            it is never abandoned to the end-of-data flatten."""
+            pnl = self._book_exit(fill)
+            self._apply_pnl(state, summary, pnl, fill.qty)
+            summary["trades"] += 1
+            fields = {
+                "direction": trade.direction,
+                "exit_reason": trade.exit_reason,
+                "strategy_exit_price": trade.exit_price,
+                "fill_exit_price": fill.price,
+                "exit_order_id": fill.order_id,
+                "pnl_usd": pnl,
+                "overlay_equity_usd": summary["overlay_equity_usd"],
+            }
+            if managed_by is not None:
+                fields["managed_by"] = managed_by
+            self.log.emit(
+                "trade_closed", ts=bar.ts, date=day.isoformat(), **fields
+            )
+            if self._pos is None:
+                self._remainder_managed = False
+                self._remainder_bar_ts = None
+                self._phase = PHASE_DONE
+            else:
+                self._remainder_managed = True
+                # The remainder is managed from the NEXT bar on:
+                # this bar's levels already produced this exit.
+                self._remainder_bar_ts = bar.ts
+                self._phase = PHASE_IN_POSITION
+                self.log.emit(
+                    "exit_partial_remainder",
+                    ts=bar.ts,
+                    date=day.isoformat(),
+                    remaining_qty=self._pos.qty,
+                    stop=self._pos.stop,
+                    target=self._pos.target,
+                    note=(
+                        "partial exit fill: the remainder stays "
+                        "under stop/target management for the rest "
+                        "of the day (hardening F4)"
+                    ),
+                )
+            self._save(state)
+
         def handle_exit_from_strategy(trade, bar) -> None:
             """The strategy closed its simulated trade on this bar:
-            mirror it with a real market order (if we hold one)."""
+            mirror it with a real market order (if we hold one).
+            The order goes through the F3 exit chain: a failure
+            never crashes the run — the exit becomes PENDING and
+            is retried on subsequent bars."""
             nonlocal strat_trades_seen, missed_logged, missed_record
             strat_trades_seen += 1
             if self._pos is None:
@@ -797,26 +1493,27 @@ class Orb15Runner:
                     state["missed_day"] = missed_record
                     self._save(state)
                 return
-            fill = self.broker.place_market(
-                self.symbol, self._pos.qty, _exit_side(self._pos.direction)
-            )
-            pnl = self._book_exit(fill)
-            self._apply_pnl(state, summary, pnl, fill.qty)
-            summary["trades"] += 1
-            self.log.emit(
-                "trade_closed",
+            fill = self._exit_fill(
+                self._pos.qty,
+                _exit_side(self._pos.direction),
+                context="strategy_exit",
                 ts=bar.ts,
-                date=day.isoformat(),
-                direction=trade.direction,
-                exit_reason=trade.exit_reason,
-                strategy_exit_price=trade.exit_price,
-                fill_exit_price=fill.price,
-                exit_order_id=fill.order_id,
-                pnl_usd=pnl,
-                overlay_equity_usd=summary["overlay_equity_usd"],
             )
-            self._phase = PHASE_DONE
-            self._save(state)
+            if fill is None:
+                # F3: both the market order and close_position
+                # failed (already logged critical). Keep managing:
+                # the exit is retried at the top of every bar.
+                self._exit_pending_reason = trade.exit_reason
+                self._exit_pending_trade = trade
+                self.log.emit(
+                    "exit_pending_retry",
+                    ts=bar.ts,
+                    date=day.isoformat(),
+                    exit_reason=trade.exit_reason,
+                    qty=self._pos.qty,
+                )
+                return
+            book_strategy_exit(trade, fill, bar)
 
         for bar in bars:
             if not _is_rth(bar):
@@ -863,6 +1560,27 @@ class Orb15Runner:
                     )
                     state["missed_day"] = missed_record
                     self._save(state)
+            # F11 bookkeeping: the wall-clock moment this bar was
+            # processed (the backstop's staleness yardstick).
+            self._last_bar_at = self._clock()
+            # --- F3 exit retry: a strategy exit whose orders ALL
+            # failed on an earlier bar is retried before anything
+            # else consumes this one.
+            if self._exit_pending_reason is not None and self._pos is not None:
+                retry_fill = self._exit_fill(
+                    self._pos.qty,
+                    _exit_side(self._pos.direction),
+                    context="exit_retry",
+                    ts=bar.ts,
+                )
+                if retry_fill is not None:
+                    pending_trade = self._exit_pending_trade
+                    self._exit_pending_reason = None
+                    self._exit_pending_trade = None
+                    book_strategy_exit(
+                        pending_trade, retry_fill, bar,
+                        managed_by="exit_retry",
+                    )
             strat.on_bar(bar)
 
             # --- strategy exit (its simulated trade closed this bar)
@@ -875,10 +1593,16 @@ class Orb15Runner:
                 sp = strat.position
                 if self._pos is not None:
                     # Restart adoption: the strategy re-fired the
-                    # recorded entry. It must agree exactly.
+                    # recorded entry. It must agree exactly — where
+                    # "exactly" means the CAPPED order quantity the
+                    # entry actually placed (F5), since a binding
+                    # cap legitimately makes them differ.
+                    expected_qty = self._capped_qty(
+                        sp.units, sp.entry_price
+                    )[0]
                     if (
                         sp.direction != self._pos.direction
-                        or sp.units != self._pos.qty
+                        or expected_qty != self._pos.qty
                     ):
                         return self._halt(
                             day, state, summary,
@@ -964,8 +1688,34 @@ class Orb15Runner:
                             )
                             self._phase = PHASE_DONE
                         else:
+                            # F5: hard caps bind BEFORE the order —
+                            # the trade is booked at its actual
+                            # (capped) size/risk, and the clipping
+                            # is on the record.
+                            order_qty, cap_info = self._capped_qty(
+                                sp.units, sp.entry_price
+                            )
+                            if cap_info is not None:
+                                summary["size_capped"] += 1
+                                self.log.emit(
+                                    "size_capped",
+                                    ts=bar.ts,
+                                    date=day.isoformat(),
+                                    **cap_info,
+                                )
+                            if order_qty <= 0:
+                                self.log.emit(
+                                    "order_blocked_size_cap",
+                                    ts=bar.ts,
+                                    date=day.isoformat(),
+                                    direction=sp.direction,
+                                    spec_shares=sp.units,
+                                )
+                                self._phase = PHASE_DONE
+                                self._save(state)
+                                continue
                             fill = self._place_entry_order(
-                                bar, sp.units, _entry_side(sp.direction)
+                                bar, order_qty, _entry_side(sp.direction)
                             )
                             self._pos = RunnerPosition(
                                 direction=sp.direction,
@@ -977,12 +1727,12 @@ class Orb15Runner:
                                 target=sp.target,
                                 entry_order_id=fill.order_id,
                             )
-                            if fill.qty != sp.units:
+                            if fill.qty != order_qty:
                                 self.log.emit(
                                     "entry_partial_fill",
                                     ts=bar.ts,
                                     date=day.isoformat(),
-                                    wanted=sp.units,
+                                    wanted=order_qty,
                                     filled=fill.qty,
                                 )
                             self.log.emit(
@@ -991,6 +1741,9 @@ class Orb15Runner:
                                 date=day.isoformat(),
                                 kind="entry",
                                 order_id=fill.order_id,
+                                client_order_id=self._client_order_id(
+                                    "entry"
+                                ),
                                 fill_price=fill.price,
                                 qty=fill.qty,
                             )
@@ -1016,26 +1769,73 @@ class Orb15Runner:
                 reason = self._orphan_exit_reason(bar)
                 if reason is not None:
                     pos = self._pos
-                    fill = self.broker.place_market(
-                        self.symbol, pos.qty, _exit_side(pos.direction)
+                    fill = self._exit_fill(
+                        pos.qty, _exit_side(pos.direction),
+                        context="orphan_levels", ts=bar.ts,
                     )
-                    pnl = self._book_exit(fill)
-                    self._apply_pnl(state, summary, pnl, fill.qty)
-                    summary["trades"] += 1
-                    self.log.emit(
-                        "trade_closed",
-                        ts=bar.ts,
-                        date=day.isoformat(),
-                        direction=pos.direction,
-                        exit_reason=reason,
-                        managed_by="runner_orphan_levels",
-                        fill_exit_price=fill.price,
-                        exit_order_id=fill.order_id,
-                        pnl_usd=pnl,
-                        overlay_equity_usd=summary["overlay_equity_usd"],
+                    if fill is not None:
+                        pnl = self._book_exit(fill)
+                        self._apply_pnl(state, summary, pnl, fill.qty)
+                        summary["trades"] += 1
+                        self.log.emit(
+                            "trade_closed",
+                            ts=bar.ts,
+                            date=day.isoformat(),
+                            direction=pos.direction,
+                            exit_reason=reason,
+                            managed_by="runner_orphan_levels",
+                            fill_exit_price=fill.price,
+                            exit_order_id=fill.order_id,
+                            pnl_usd=pnl,
+                            overlay_equity_usd=summary["overlay_equity_usd"],
+                        )
+                        if self._pos is None:
+                            self._phase = PHASE_DONE
+                        self._save(state)
+                    # fill is None: exit_failure_critical already
+                    # logged; the position stays under management
+                    # and the level check runs again on later bars.
+
+            # --- remainder management (F4): a partial strategy
+            # exit left shares behind. They stay under the
+            # recorded stop/target/flatten levels for the rest of
+            # the day instead of riding unmanaged to end-of-data.
+            if (
+                self._pos is not None
+                and self._remainder_managed
+                and self._remainder_bar_ts is not None
+                and bar.ts > self._remainder_bar_ts
+                and self._exit_pending_reason is None
+                and strat.position is None
+            ):
+                reason = self._orphan_exit_reason(bar)
+                if reason is not None:
+                    pos = self._pos
+                    fill = self._exit_fill(
+                        pos.qty, _exit_side(pos.direction),
+                        context="exit_remainder", ts=bar.ts,
                     )
-                    self._phase = PHASE_DONE
-                    self._save(state)
+                    if fill is not None:
+                        pnl = self._book_exit(fill)
+                        self._apply_pnl(state, summary, pnl, fill.qty)
+                        summary["trades"] += 1
+                        self.log.emit(
+                            "trade_closed",
+                            ts=bar.ts,
+                            date=day.isoformat(),
+                            direction=pos.direction,
+                            exit_reason=reason,
+                            managed_by="runner_remainder_levels",
+                            fill_exit_price=fill.price,
+                            exit_order_id=fill.order_id,
+                            pnl_usd=pnl,
+                            overlay_equity_usd=summary["overlay_equity_usd"],
+                        )
+                        if self._pos is None:
+                            self._remainder_managed = False
+                            self._remainder_bar_ts = None
+                            self._phase = PHASE_DONE
+                        self._save(state)
 
             # --- skipped / void detection (once)
             if (
@@ -1093,25 +1893,58 @@ class Orb15Runner:
 
         # --- end of bars: a known position still open is flattened
         # NOW (feed ended / day over). Never carried overnight.
+        # The exit goes through the F3 chain: if even that fails,
+        # the position stays in the persisted state (tomorrow's
+        # reconciliation flattens it as an overnight leftover) and
+        # the failure is on the record — the run does not crash.
         if self._pos is not None:
             pos = self._pos
-            fill = self.broker.place_market(
-                self.symbol, pos.qty, _exit_side(pos.direction)
+            fill = self._exit_fill(
+                pos.qty, _exit_side(pos.direction),
+                context="end_of_data_flatten",
             )
-            pnl = self._book_exit(fill)
-            self._apply_pnl(state, summary, pnl, fill.qty)
-            summary["trades"] += 1
-            self.log.emit(
-                "flatten_enforced",
-                ts=self._clock(),
-                date=day.isoformat(),
-                direction=pos.direction,
-                fill_exit_price=fill.price,
-                exit_order_id=fill.order_id,
-                pnl_usd=pnl,
-                overlay_equity_usd=summary["overlay_equity_usd"],
-            )
-            self._phase = PHASE_DONE
+            if fill is None:
+                self.log.emit(
+                    "flatten_failed_position_carried",
+                    ts=self._clock(),
+                    date=day.isoformat(),
+                    direction=pos.direction,
+                    qty=pos.qty,
+                    note=(
+                        "end-of-data flatten failed via market order "
+                        "AND close_position; the position remains in "
+                        "the persisted state for tomorrow's "
+                        "overnight-leftover flatten"
+                    ),
+                )
+            else:
+                pnl = self._book_exit(fill)
+                self._apply_pnl(state, summary, pnl, fill.qty)
+                summary["trades"] += 1
+                self.log.emit(
+                    "flatten_enforced",
+                    ts=self._clock(),
+                    date=day.isoformat(),
+                    direction=pos.direction,
+                    fill_exit_price=fill.price,
+                    exit_order_id=fill.order_id,
+                    pnl_usd=pnl,
+                    overlay_equity_usd=summary["overlay_equity_usd"],
+                )
+                if self._pos is None:
+                    self._phase = PHASE_DONE
+                else:
+                    self.log.emit(
+                        "flatten_partial_position_carried",
+                        ts=self._clock(),
+                        date=day.isoformat(),
+                        remaining_qty=self._pos.qty,
+                        note=(
+                            "the flatten filled partially; the "
+                            "remainder remains in the persisted "
+                            "state for tomorrow's reconciliation"
+                        ),
+                    )
 
         if summary["no_trade_reason"] is None and summary["trades"] == 0:
             if strat.skipped_for_size > 0:
@@ -1127,11 +1960,16 @@ class Orb15Runner:
             self._phase = PHASE_DONE
         state["catchup_bars"] = catchup_bars
         summary["catchup_bars"] = catchup_bars
+        summary["exit_failures"] = self._exit_failures
         if missed_record is not None:
             state["missed_day"] = missed_record
         self._save(state)
         summary["overlay_equity_usd"] = state["overlay_equity_usd"]
         self.log.emit("day_summary", ts=self._clock(), **summary)
+        # The run is over: the F11 backstop stands down until the
+        # next run_day installs a fresh day context.
+        self._day_state = None
+        self._day_summary = None
         return summary
 
     def _orphan_exit_reason(self, bar: Bar) -> Optional[str]:
@@ -1140,7 +1978,7 @@ class Orb15Runner:
         exits decided on the completed bar, filled at market."""
         pos = self._pos
         assert pos is not None
-        if bar.ts.time() >= FLATTEN_TIME:
+        if bar.ts.time() >= self._flatten_time:
             return "EOD_FLATTEN"
         if pos.direction == "long":
             if bar.low <= pos.stop:
@@ -1224,6 +2062,9 @@ class Orb15Runner:
         )
         summary["halted"] = True
         summary["halt_reason"] = reason
+        summary["exit_failures"] = self._exit_failures
+        self._day_state = None
+        self._day_summary = None
         self.log.emit("day_summary", ts=self._clock(), **summary)
         return summary
 
@@ -1233,34 +2074,60 @@ class Orb15Runner:
         source_factory: Callable[[date_type], Iterable[Bar]],
         sleep_fn: Callable[[float], None] = time_module.sleep,
         max_days: Optional[int] = None,
+        watchdog_poll_seconds: float = 20.0,
     ) -> Optional[dict]:
         """Run forever (or ``max_days`` days): hours-gated so the
         service may run 24/7 harmlessly. Only ET weekdays inside
-        09:20–16:10 trigger a day run; a halted day stops the loop."""
+        09:20–16:10 trigger a day run; a halted day stops the loop.
+
+        A daemon watchdog thread runs alongside (hardening F11):
+        while a day run is blocked inside a stalled bar source —
+        the case where bars simply stop arriving — the watchdog
+        checks the wall clock and fires the flatten backstop when
+        a position is open past its flatten time with no bar
+        processed for over 3 minutes. It can never kill the
+        service: its own exceptions are swallowed (the backstop
+        logs its failures itself)."""
+        stop_watchdog = threading.Event()
+
+        def _watchdog() -> None:
+            while not stop_watchdog.wait(watchdog_poll_seconds):
+                try:
+                    self._maybe_backstop_flatten(self._clock())
+                except Exception:
+                    pass
+
+        watchdog = threading.Thread(
+            target=_watchdog, name="orb15-flatten-watchdog", daemon=True
+        )
+        watchdog.start()
         last_run: Optional[date_type] = None
         days_run = 0
-        while True:
-            now = self._clock()
-            today = now.date()
-            in_window = (
-                now.weekday() < 5
-                and time(9, 20) <= now.time() < time(16, 10)
-                and last_run != today
-            )
-            if in_window:
-                summary = self.run_day(
-                    today, source_factory(today), live_since=now
+        try:
+            while True:
+                now = self._clock()
+                today = now.date()
+                in_window = (
+                    now.weekday() < 5
+                    and time(9, 20) <= now.time() < time(16, 10)
+                    and last_run != today
                 )
-                last_run = today
-                days_run += 1
-                if summary.get("halted"):
-                    return summary
-                if max_days is not None and days_run >= max_days:
-                    return summary
-            else:
-                sleep_fn(15.0)
-                if max_days is not None and days_run >= max_days:
-                    return None
+                if in_window:
+                    summary = self.run_day(
+                        today, source_factory(today), live_since=now
+                    )
+                    last_run = today
+                    days_run += 1
+                    if summary.get("halted"):
+                        return summary
+                    if max_days is not None and days_run >= max_days:
+                        return summary
+                else:
+                    sleep_fn(15.0)
+                    if max_days is not None and days_run >= max_days:
+                        return None
+        finally:
+            stop_watchdog.set()
 
 
 # ----------------------------------------------------------------------
@@ -1279,6 +2146,59 @@ def main(argv: Optional[list] = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    state_dir = Path(
+        args.state_dir
+        or os.environ.get(ENV_STATE_DIR)
+        or "alpaca_state"
+    )
+    # F7: single instance. The lock is taken BEFORE any API use;
+    # a second instance logs the refusal and exits CLEANLY (0), so
+    # systemd never crash-loops a duplicate and it can never
+    # double-trade the account.
+    lock = InstanceLock(state_dir / "runner.lock")
+    if not lock.acquire():
+        print(
+            "REFUSING TO START: another instance of the ORB-15 "
+            "runner already holds the lock in "
+            f"{state_dir} (single-instance guard). Exiting cleanly.",
+            file=sys.stderr,
+        )
+        try:
+            EventLog(state_dir / "events.jsonl").emit(
+                "runner_lock_refused", pid=os.getpid(),
+                note="a second instance refused to start (F7)",
+            )
+        except Exception:
+            pass
+        return 0
+    try:
+        return _main_locked(args, state_dir)
+    finally:
+        lock.release()
+
+
+def _parse_hhmm(raw: str) -> time:
+    parts = str(raw).split(":")
+    return time(int(parts[0]), int(parts[1]))
+
+
+def _calendar_fn_for(client: AlpacaClient):
+    """The F6 calendar provider backed by the real client: the
+    day's {"open", "close"} times, or None for a non-trading day."""
+
+    def calendar_fn(day: date_type):
+        for entry in client.get_calendar(day, day):
+            if str(entry.get("date")) == day.isoformat():
+                return {
+                    "open": _parse_hhmm(entry.get("open", "09:30")),
+                    "close": _parse_hhmm(entry.get("close", "16:00")),
+                }
+        return None
+
+    return calendar_fn
+
+
+def _main_locked(args, state_dir: Path) -> int:
     try:
         config = AlpacaConfig.from_env()
     except MissingCredentialsError as exc:
@@ -1293,16 +2213,14 @@ def main(argv: Optional[list] = None) -> int:
               file=sys.stderr)
         return 2
 
-    state_dir = Path(
-        args.state_dir
-        or os.environ.get(ENV_STATE_DIR)
-        or "alpaca_state"
-    )
     enabled = runner_enabled()
     broker = AlpacaBroker(client)
     log = EventLog(state_dir / "events.jsonl")
     store = StateStore(state_dir / "runner_state.json")
-    runner = Orb15Runner(broker, enabled=enabled, log=log, store=store)
+    runner = Orb15Runner(
+        broker, enabled=enabled, log=log, store=store,
+        calendar_fn=_calendar_fn_for(client),
+    )
     source = AlpacaBarSource(client, clock=lambda: datetime.now(ET))
 
     print(f"ORB-15 Alpaca PAPER forward test — account "
