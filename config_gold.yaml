@@ -1,0 +1,38 @@
+# First Candle Rule (FCR) — GOLD bot configuration (frozen variant)
+#
+# This is the strategy config for gold_bot.py, frozen to the variant
+# that passed the 24-month validation in results/gold24.json:
+#
+#   V0 BASELINE — the original rules, no variant flags of any kind.
+#   MGC (GC.v.0 tape), 1-minute bars, 2024-10-21 -> 2026-10-20,
+#   516 RTH days: 224 trades (64W/160L, 28.6%), net +$2,191.00 /
+#   +26.26R, ending equity $2,691.00 on a $500 paper account,
+#   max drawdown $1,543.00, equity trough $355.00 (2024-10-22),
+#   second half also positive (+$737.00 / +2.06R).
+#
+# Do not retune this file casually: gold_bot.py REFUSES to run if the
+# symbol, sizing, or variant flags differ from the validated spec —
+# changing the strategy means re-validating it first.
+#
+# PAPER / DEMO ONLY. The bot trades the Tradovate DEMO environment
+# through the tradovate/ package; LIVE_TRADING_ENABLED is False and
+# the code refuses every other environment.
+symbol: MGC
+data_symbol: "GC"             # GC.v.0 continuous tape (Databento GLBX.MDP3)
+timezone: America/New_York
+
+# Instrument / sizing (identical to the validated backtests)
+instrument_type: futures        # 'futures' (contracts) or 'equity' (shares)
+point_value_usd: 10.0           # $ per 1.00 point per contract (MGC = $10/pt)
+risk_budget_usd: 150            # max dollars risked per trade
+max_contracts: 5                # hard cap on contracts per trade
+starting_balance_usd: 500       # paper account size used in validation
+
+# Risk / reward
+rr_target: 3.0                  # fixed reward:risk multiple (target = 3x risk distance)
+
+# Session structure (America/New_York, regular session only)
+first_candle_start: "09:30"   # first 5-minute candle opens
+first_candle_end: "09:35"     # first 5-minute candle completes; its high/low become the day's levels
+entry_cutoff: "12:00"         # no new entries at/after this time
+flatten_time: "15:55"         # any open position is flattened at this time
