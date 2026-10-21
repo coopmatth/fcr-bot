@@ -828,6 +828,34 @@ closest. Real quotes are purchasable (Databento OPRA / Polygon
 options) if the band ever justifies it; the paper forward test
 above remains the arbiter.
 
+**Options REAL-quotes rerun (2026-10-21; OPRA via Databento).**
+The modeled run above was superseded the same day: the identical
+498 frozen trades were repriced with **real consolidated NBBO
+quotes** from Databento's OPRA.PILLAR dataset (schema cbbo-1m,
+1-minute sampled BBO) — buy at the real ask of the entry minute,
+sell at the real bid of the exit minute, real $2.50 premium gate
+(`run_orb15_options_real.py`, `fcr/options_real.py`; full record
+`results/orb15_options_real.json`; total data cost **$0.51**;
+raw quotes stay local, never in this repo). **Full 24 months:
+469 taken / 29 gate-skipped / 0 untradeable, win rate 36.9%,
+net +$7,631 (end $8,131 on the $500 overlay, trough $439, max DD
+$1,079)** — better than the shares themselves (+$6,803) and far
+above every modeled anchor. **Last 120 trading days: 116 taken /
+2 gate-skipped, win rate 33.6%, net +$1,106 (end $1,606, trough
+−$42, max DD $783)** — positive where the shares made only +$12
+and every modeled anchor was negative. Why the model missed:
+real entry asks ran **below** the Black-Scholes (a) estimates
+(median ratio 0.86 over 24mo, 0.84 in the last 120d) — the
+model's morning premiums were systematically too dear, the
+opposite bias from its near-expiry underpricing. Decay is still
+real (33 of 203 shares-winners lost in options over 24mo; 10 of
+49 in the last 120d) but convexity more than paid for it in this
+window. Quote matching was clean: no trade needed the ±2-minute
+fallback, no strike substitutions; Databento flags 2025-10-22
+as a degraded-data day (one trade falls on it). Caveats stand:
+a 1-minute sampled quote is not a guaranteed fill, and the
+Alpaca paper forward test remains the arbiter.
+
 ## Backtest results (free Yahoo data, fetched 2026-10-21)
 
 Execution model: entries fill at the engulfing bar's close; exits at
